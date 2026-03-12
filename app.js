@@ -520,6 +520,13 @@ function renderGlossaryDetail() {
   el.textContent = "";
 }
 
+function setLiveLoading(visible, text = "Loading live feeds...") {
+  const el = document.getElementById("liveLoading");
+  if (!el) return;
+  el.textContent = text;
+  el.classList.toggle("hidden", !visible);
+}
+
 
 function renderAlerts(events) {
   const container = document.getElementById("alerts");
@@ -1518,6 +1525,7 @@ async function init() {
   let refreshInFlight = false;
   let consecutiveFailures = 0;
   let lastGood = null;
+  let seenLive = false;
   const FAILURE_GRACE = 3;
   const REFRESH_MS = 45000;
   const healthEndpoints = resolveApiEndpoints("api/source-health");
@@ -1566,6 +1574,7 @@ async function init() {
   const refreshLiveData = async (isInitial = false) => {
     if (refreshInFlight) return;
     refreshInFlight = true;
+    if (!seenLive) setLiveLoading(true, "Loading live feeds...");
     try {
       const [health, live] = await Promise.all([
         fetchFirstJson(healthEndpoints),
@@ -1581,15 +1590,19 @@ async function init() {
       }
       lastGood = { events, mapEvents, sourceHealth: live.source_health || health?.sources || {} };
       consecutiveFailures = 0;
+      seenLive = true;
       applyLiveData(events, mapEvents, lastGood.sourceHealth, "live");
+      setLiveLoading(false);
     } catch {
       consecutiveFailures += 1;
       if (lastGood && consecutiveFailures < FAILURE_GRACE) {
         applyLiveData(lastGood.events, lastGood.mapEvents, lastGood.sourceHealth, "degraded");
+        if (!seenLive) setLiveLoading(true, "Loading live feeds...");
       } else {
         const fallback = await fetchJsonWithTimeout("./data/sample-threats.json", 8000) || [];
         const mode = isInitial ? "offline" : "degraded";
         applyLiveData(fallback, fallback, lastGood?.sourceHealth || {}, mode);
+        if (!seenLive) setLiveLoading(true, "Loading live feeds...");
       }
     } finally {
       refreshInFlight = false;
