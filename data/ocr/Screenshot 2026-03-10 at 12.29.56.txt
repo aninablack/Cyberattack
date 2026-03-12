@@ -1,0 +1,17 @@
+FIGURE C | Top considerations for cyber risk mitigation strategies
+Which of the following does your organization consider in its overall cyber
+risk mitigation strategy? (select all that apply)
+Geopolitically motivated cyberattacks 64%
+(disruption of critical national infrastructure, espionage, etc.) — En
+Disinformation 49%
+es
+Convergence of IT/OT/loT/robotics 42%
+a S|
+Natural disasters 41%
+(e.g. extreme weather, long-term environmental disruptions)
+Dependence on undersea cables or lines of communication 18%
+Dependence on space-based assets 15%
+(e.g. satellites, GPS, satellite communications)
+None of the above 11%
+0% 20% 40% 60%
+oO Responses (%)

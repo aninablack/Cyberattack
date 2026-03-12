@@ -1,0 +1,17 @@
+Open-Source Malware Explodes
+Opeh-source malware detections jumped by 73% in 2025 compared with 2024.
+Malicious Package Detections by OSS Repository: 2024-2025
+12500
+10819
+10000
+7500
+5290
+5000
+2500 1575
+891
+35 206 35 «14 38 129
+()
+VS Code NuGet RubyGems PyPI npm
+@ 2024 @ 2025
+Figure 1: Malicious packages by package manager: 2024-2025.
+(Source: RL)

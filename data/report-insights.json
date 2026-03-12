@@ -1,0 +1,16 @@
+[
+  {"source":"CrowdStrike 2026","metric":"AI-enabled attacks YoY","value":89,"unit":"%","year":2025,"confidence":"high"},
+  {"source":"CrowdStrike 2026","metric":"Average eCrime breakout time","value":29,"unit":"minutes","year":2025,"confidence":"high"},
+  {"source":"CrowdStrike 2026","metric":"Botnet/C2 operations growth","value":500,"unit":"% increase","year":2025,"confidence":"medium"},
+  {"source":"CrowdStrike 2026","metric":"Cloud-conscious intrusions","value":37,"unit":"% increase","year":2025,"confidence":"high"},
+  {"source":"2026 Cyber Security Report","metric":"Ransomware activity growth","value":34,"unit":"% increase","year":2025,"confidence":"medium"},
+  {"source":"CrowdStrike 2026","metric":"Zero-day exploitation before disclosure","value":42,"unit":"% increase","year":2025,"confidence":"high"},
+  {"source":"Check Point 2026","metric":"ClickFix activity","value":500,"unit":"% increase","year":2025,"confidence":"high"},
+  {"source":"Check Point 2026","metric":"Voice-enabled fraud losses","value":250,"unit":"USD million+","year":2025,"confidence":"medium"},
+  {"source":"Software Supply Chain 2026","metric":"Malicious open-source packages","value":73,"unit":"% increase","year":2025,"confidence":"high"},
+  {"source":"Software Supply Chain 2026","metric":"Malicious npm packages detected","value":10000,"unit":"count+","year":2025,"confidence":"high"},
+  {"source":"Software Supply Chain 2026","metric":"Exposed developer secrets","value":11,"unit":"% increase","year":2025,"confidence":"high"},
+  {"source":"WEF Outlook 2026","metric":"AI vulnerabilities fastest-growing risk","value":87,"unit":"respondents %","year":2026,"confidence":"high"},
+  {"source":"WEF Outlook 2026","metric":"Geopolitically motivated cyberattack planning","value":64,"unit":"organizations %","year":2026,"confidence":"high"},
+  {"source":"ITU GCI 2024","metric":"Global average country cybersecurity score","value":65.7,"unit":"/100","year":2024,"confidence":"high"}
+]

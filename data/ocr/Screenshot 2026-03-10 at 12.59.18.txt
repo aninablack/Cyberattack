@@ -1,0 +1,21 @@
+What is your organization's greatest challenge to becoming cyber resilient?
+Third-party and supply chain vulnerabilities 18%
+31% _
++  ~ ~~
+Rapidly evolving threat landscape 56%
+and emerging technologies
+ae : Po
+Regulatory compliance and governance complexities 41%
+25%
+Lack of visibility across IT, OT and loT environments 19% |
+56%
+Cybersecurity skills and expertise shortage 19% | |
+56%
+Insufficient incident response and recovery planning 15%
+19%
+Legacy systems 15%
+25%
+Lack of funds 15% a
+63%
+0% 20% 40% 60% 80%
+e@ CEO of highly resilient organization e@ CEO of insufficiently resilient organization

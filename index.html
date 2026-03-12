@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Global Cyber Threat Intelligence Dashboard</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>Global Cyber Threat Intelligence</h1>
+        <p>Live Threat Monitoring, Global Hotspots, and Response Intelligence</p>
+      </div>
+      <div class="top-right">
+        <div id="liveBadge" class="live-badge offline">OFFLINE</div>
+        <div class="badge">UTC <span id="utcNow"></span></div>
+        <div class="feed-status-util">
+          <button id="feedStatusToggle" class="toggle-btn feed-toggle" type="button" aria-expanded="false" aria-controls="feedStatusWrap">Feed status</button>
+          <div id="feedStatusChips" class="feed-mini-chips feed-inline-chips"></div>
+          <div id="feedStatusWrap" class="collapsed">
+            <div id="feedStatusSummary" class="meta"></div>
+            <div id="feedStatusGrid" class="feed-status-grid"></div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="grid">
+      <section class="panel map-panel">
+        <div class="panel-head">
+          <h2>Attack Hotspot Map</h2>
+          <div class="map-head-actions">
+            <span id="mapCount" class="sub"></span>
+            <div class="map-log-util">
+              <button id="threatLogToggle" class="toggle-btn map-log-toggle" type="button" aria-expanded="false" aria-controls="threatLogWrap">Log</button>
+              <div id="threatLogWrap" class="collapsed">
+                <div class="threat-log-head">
+                  <div id="threatLogMeta" class="small"></div>
+                </div>
+                <div id="threatLogList" class="threat-log-list"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div id="selectedHotspot" class="meta">Select a hotspot for detail.</div>
+        <div id="currentOps" class="meta"></div>
+        <div id="worldMap" aria-label="Attack hotspot map"></div>
+        <div class="meta">Near-real-time simulation + source integration ready</div>
+        <div id="historicalSource" class="meta"></div>
+      </section>
+
+      <section class="panel glossary-panel">
+        <div class="panel-head">
+          <h2>Attack Type Glossary</h2>
+          <span class="sub">What each attack category means in operational terms</span>
+        </div>
+        <div id="attackGlossary"></div>
+      </section>
+
+      <section class="panel span-2">
+        <div class="panel-head">
+          <h2>Report Intelligence Baseline</h2>
+        </div>
+        <div id="insights"></div>
+      </section>
+
+      <section class="panel span-2">
+        <div class="panel-head">
+          <h2>Real-Time Feed Connectors</h2>
+          <div class="panel-head-actions">
+            <span class="sub">Primary feeds for production ingestion</span>
+            <button id="sourcesToggle" class="toggle-btn" type="button" aria-expanded="false" aria-controls="sourcesWrap">Show</button>
+          </div>
+        </div>
+        <div id="sourcesWrap" class="collapsed">
+          <div id="sources"></div>
+        </div>
+      </section>
+
+    </main>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+    <script src="./app.js" type="module"></script>
+  </body>
+</html>

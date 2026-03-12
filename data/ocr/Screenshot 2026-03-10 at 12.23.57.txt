@@ -1,0 +1,25 @@
+ae
+pi
+reat LanasCcap
+i
+e a.
+ae
+Overview ——
+ae
+
+CrowdStrike named 24 new adversaries in 2025, bringing the total tracked to 281, signifying a rer ne
+
+and more complex threat landscape. Adversaries continue to become faster, stealthier, and more effective
+
+as they adapt to navigate larger environments and bypass stronger security controls. The below trends
+
+define 2025 as the year of the evasive adversary. ee
+
+89% increase in attacks by Average eCrime breakout time 82% of detections in 2025 (24 new adversaries tracked
+Al-enabled adversaries dropped to 29 minutes, a 659 were malware-free, up from by CrowdStrike, raising
+increase in speed from 2024, ‘51% in 2020 the total to 281
+and the fastest breakout time
+was only 27 seconds
+CChina-nexus activity increased 42% nerease in zero-day Valid account abuse 57% tise in cloud-conscious
+38% across all sectors, with an vulnerabilities exploited prior to accounted for 35% of intrusions, with 266% increase
+95% inerease in logistics public disclosure cloud incidents by state-nexus threat actors

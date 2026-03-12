@@ -1,0 +1,14 @@
+FIGURE A | Percentage of organizations with processes in place to assess Al security
+
+Does your organization have a process in place to
+
+assess the security of Al tools before deploying them?
+
+2026
+
+64% 36%
+a a ee ee ee
+2025
+37% 63%
+0% 20% 40% 60% 80% 100%
+e@ Yes [ ) No

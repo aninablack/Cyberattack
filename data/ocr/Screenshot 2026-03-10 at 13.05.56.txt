@@ -1,0 +1,25 @@
+ShinyHunters
+operator instructs
+the victim to provide
+credentials and
+MFA code.
+ShinyHunters
+operator calls
+employee of a Victim grants the ShinyHunters
+company which attacker access exfiltrates
+uses Salesforce, to the Salesforce customer data from
+impersonating IT instance via Salesforce instance.
+support. credentials/app.
+ShinyHunters
+operator instructs
+the victim to connect
+a malicious app to
+the Salesforce org.
+
+ShinyHunters ShinyHunters
+moves laterally exfiltrates customer
+into other cloud data from cloud
+platforms (Okta, platforms.
+
+Microsoft}.
+BB Attacker activity I) Victim activity

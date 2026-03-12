@@ -1,0 +1,17 @@
+G Virtualization
+dente Beoud Infrastructure
+* Hijacks AD agent * Registers federated * Maintains persistent
+a identity provider in access to VMware
+* Modifies Entra ID Victim Entra ID tenant vCenter using OrBit
+» conditional access q Linux backdoor
+policies * Exfiltrates data from
+’ cloud-based SaaS. * Creates unmanaged
++ Leverages compromised applications VMs to exfiltrate data
+SSO account to access i : from key systems
+data repositories and 9 Creates mail forwarding without security tooling
+modify EDR policies and mail deletion rules visibility
+in Microsoft 365 to
+prevent legitimate users ¢ Encrypts data using
+from receiving security Linux version of
+alerts Embargo ransomware
+Figure 13. BLOCKADE SPIDER's cross-domain tradecraft

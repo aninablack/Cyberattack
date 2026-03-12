@@ -1,0 +1,37 @@
+{
+  "meta": {
+    "source": "NETSCOUT ATLAS DDoS Threat Intelligence Report (Issue 16)",
+    "window": "2H 2025",
+    "published": "2026-02"
+  },
+  "kpis": [
+    { "label": "Total attacks", "value": "8,088,463" },
+    { "label": "Countries impacted", "value": "203" },
+    { "label": "Peak demonstrated capacity", "value": "30 Tbps / 4 Gpps" },
+    { "label": "NTP alerts", "value": "45,000+" },
+    { "label": "DNS root notable events", "value": "38" }
+  ],
+  "regional_attacks": [
+    { "region": "EMEA", "value": 3331570 },
+    { "region": "APAC", "value": 1904602 },
+    { "region": "North America", "value": 1272625 },
+    { "region": "LATAM", "value": 1014148 }
+  ],
+  "vector_complexity": [
+    { "bucket": "1 vector", "value": 48.76 },
+    { "bucket": "2-5 vectors", "value": 42.06 },
+    { "bucket": "6-10 vectors", "value": 8.08 },
+    { "bucket": "11-15 vectors", "value": 0.8 },
+    { "bucket": "16-20 vectors", "value": 0.28 },
+    { "bucket": "21+ vectors", "value": 0.04 }
+  ],
+  "critical_infra": [
+    { "metric": "Largest DNS root event", "value": "21 Gbps against A root (2025-08-17)" },
+    { "metric": "NTP exploitation pressure", "value": "More than 45,000 alerts contained NTP components" }
+  ],
+  "threat_actors": [
+    { "actor": "NoName057(16)", "detail": "Claimed more than 200 attacks in July 2025", "confidence": "claimed + observed alignment" },
+    { "actor": "Keymous+", "detail": "Sustained campaign activity with multi-vector operations", "confidence": "observed" },
+    { "actor": "TurboMirai/Aisuru", "detail": "IoT botnet class associated with multi-Tbps attack demonstrations", "confidence": "observed" }
+  ]
+}

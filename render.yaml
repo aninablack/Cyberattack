@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: cyber-threat-api
+    env: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: CACHE_TTL_SECONDS
+        value: "900"
+      - key: MAX_TOTAL_EVENTS
+        value: "500"
+      - key: URLSCAN_REFRESH_EVERY
+        value: "4"
+      - key: SHODAN_REFRESH_EVERY
+        value: "8"
+      - key: CENSYS_REFRESH_EVERY
+        value: "8"

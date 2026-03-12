@@ -1,0 +1,20 @@
+\ oe /
+Sh HAL etn ade a me
+Nebty-2.3 Y;
+re £% i —O Gains access to—>
+at
+SCATTERED UMware
+SPIDER vCenter
+(3) Identifies and shuts
+| down VM hosting DC
+Creates new VM using
+downloaded ISO or (2)
+identifies existing but Sree)
+decommissioned VM a
+(4) Detaches DC VMDK
+from host VM
++
+(5) MountsDC VMDKasa ___
+drive to unmanaged VM
+(Sa (6) Copies NTDS and the __, | ==
+= €. SYSTEM registry hive —=

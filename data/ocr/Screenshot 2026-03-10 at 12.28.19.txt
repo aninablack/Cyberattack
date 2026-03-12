@@ -1,0 +1,15 @@
+Malicious Files Detected on PyPI: 2024-2025
+2000
+1575
+1500
+1000
+767
+444
+er 358
+249 217
+1 5 28 24 79
+0 — _
+Ransomware —_Hacktool Backdoor Dropper Pua Trojan Infostealer Downloader Total
+@ 2024 @ 2025
+Figure 3: Malicious Python packages by type: 2024-2025.
+(Source: RL)

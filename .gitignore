@@ -1,0 +1,11 @@
+backend/.env
+backend/.venv/
+backend/__pycache__/
+backend/.pulsedive_budget.json
+backend/.abuseipdb_budget.json
+backend/.abusech_budget.json
+backend/.depsdev_budget.json
+backend/.osv_budget.json
+backend/.urlscan_budget.json
+backend/.shodan_budget.json
+backend/.censys_budget.json

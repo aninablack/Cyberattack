@@ -1,0 +1,6 @@
+Malware by Open-source Repository: 2025
+@ NuGet 0.1%
+RubyGems_ 1.1%
+@ vsCode 1.7%
+@ pPypl 7.4%
+npm 89.7%

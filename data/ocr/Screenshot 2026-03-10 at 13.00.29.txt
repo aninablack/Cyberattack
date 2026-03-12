@@ -1,0 +1,22 @@
+Which cybersecurity issues related to generative Al concern you the most?
+Data leaks (exposure of personal 34%
+data through genAl
+lata through genAl) 29%
+Advancement of adversarial capabilities 29%
+(e.g. phishing, malware development, deep fakes)
+47%
+46%
+Technical security of the Al systems themselves 13%
+5% *
+Increased complexity of security governance 12%
+13%
+9%
+Software supply chain and code development 1%
+risks (¢.g. potential backdoors) @
+6%
+8%
+Legal concerns of intellectual property and liability 4%
+4%
+8%
+0% 10% 20% 30% 40% 50%
+@ 2026 @ 2025 2024

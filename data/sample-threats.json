@@ -1,0 +1,62 @@
+[
+  {
+    "id": "evt-01",
+    "country": "United States",
+    "lat": 37.09,
+    "lon": -95.71,
+    "type": "Credential Theft",
+    "kev": 1,
+    "epss": 0.84,
+    "confidence": 0.88,
+    "assetCriticality": 5,
+    "hoursAgo": 2
+  },
+  {
+    "id": "evt-02",
+    "country": "Germany",
+    "lat": 51.16,
+    "lon": 10.45,
+    "type": "DDoS",
+    "kev": 0,
+    "epss": 0.42,
+    "confidence": 0.72,
+    "assetCriticality": 4,
+    "hoursAgo": 1
+  },
+  {
+    "id": "evt-03",
+    "country": "India",
+    "lat": 20.59,
+    "lon": 78.96,
+    "type": "Ransomware",
+    "kev": 1,
+    "epss": 0.77,
+    "confidence": 0.91,
+    "assetCriticality": 5,
+    "hoursAgo": 5
+  },
+  {
+    "id": "evt-04",
+    "country": "Brazil",
+    "lat": -14.23,
+    "lon": -51.92,
+    "type": "Supply Chain",
+    "kev": 1,
+    "epss": 0.68,
+    "confidence": 0.79,
+    "assetCriticality": 4,
+    "hoursAgo": 8
+  },
+  {
+    "id": "evt-05",
+    "country": "Singapore",
+    "lat": 1.35,
+    "lon": 103.82,
+    "type": "Botnet C2",
+    "kev": 0,
+    "epss": 0.55,
+    "confidence": 0.66,
+    "assetCriticality": 3,
+    "hoursAgo": 3
+  }
+]

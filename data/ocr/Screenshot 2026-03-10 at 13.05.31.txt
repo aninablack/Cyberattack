@@ -1,0 +1,7 @@
+Attacker places ClickFix Attacker directs the victim to a Victim visits ClickFix
+lure in a malicious / website hosting a ClickFix lure website
+compromised website
+Attacker delivers Victim runs malicious content Victim follows
+malware payloads devised by the attacker ClickFix technical
+leading to compromise instructions
+4a Attacker activity a Victim activity

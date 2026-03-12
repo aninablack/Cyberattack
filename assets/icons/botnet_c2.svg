@@ -1,0 +1,8 @@
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'>
+  <circle cx='12' cy='12' r='2.2' fill='#EAF7FF'/>
+  <circle cx='5' cy='8' r='2' fill='none' stroke='#EAF7FF' stroke-width='2'/>
+  <circle cx='19' cy='8' r='2' fill='none' stroke='#EAF7FF' stroke-width='2'/>
+  <circle cx='5' cy='17' r='2' fill='none' stroke='#EAF7FF' stroke-width='2'/>
+  <circle cx='19' cy='17' r='2' fill='none' stroke='#EAF7FF' stroke-width='2'/>
+  <path d='M7 8l3 2M17 8l-3 2M7 16l3-2M17 16l-3-2' stroke='#EAF7FF' stroke-width='1.8'/>
+</svg>
