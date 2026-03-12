@@ -1,8 +1,33 @@
 const utcNow = document.getElementById("utcNow");
-utcNow.textContent = new Date().toISOString().replace("T", " ").slice(0, 19);
+const lastSyncBadge = document.getElementById("lastSyncBadge");
+let lastSyncedAt = null;
+
+function formatUtcNow() {
+  return new Date().toISOString().replace("T", " ").slice(0, 19);
+}
+
+function formatAgo(ts) {
+  if (!ts) return "--";
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return "--";
+  const s = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000));
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  return `${h}h ago`;
+}
+
+function updateTopBadges() {
+  if (utcNow) utcNow.textContent = formatUtcNow();
+  if (lastSyncBadge) lastSyncBadge.textContent = `Last sync: ${formatAgo(lastSyncedAt)}`;
+}
+
+updateTopBadges();
 
 const MAPTILER_KEY = localStorage.getItem("MAPTILER_KEY") || "";
 const RUNTIME_API_BASE = (window.CYBER_API_BASE || localStorage.getItem("CYBER_API_BASE") || "").trim();
+const FALLBACK_API_BASE = "https://cyber-threat-api-pjpn.onrender.com";
 
 const sourceCatalog = [
   { name: "CISA KEV Catalog (JSON)", type: "Known exploited vulnerabilities", url: "https://www.cisa.gov/known-exploited-vulnerabilities-catalog" },
@@ -127,7 +152,9 @@ let liveSourceHealth = {};
 const BALANCED_MAP_MODE = true;
 const THREAT_LOG_STORAGE_KEY = "threat_log_v1";
 const THREAT_LOG_MAX = 300;
+const LIVE_CACHE_STORAGE_KEY = "live_cache_v1";
 let threatLog = [];
+let liveLoadingTimeoutId = null;
 
 const THREAT_COLORS = {
   ransomware: "#ff4d6d",
@@ -249,8 +276,11 @@ function resolveApiEndpoints(path) {
       `http://localhost:8090/${cleanPath}`
     ]);
   }
-  // Production default: same-origin /api proxy path.
-  return [`${window.location.origin}/${cleanPath}`];
+  // Production: try same-origin first, then explicit hosted API fallback.
+  return uniqueStrings([
+    `${window.location.origin}/${cleanPath}`,
+    joinApi(FALLBACK_API_BASE, cleanPath)
+  ]);
 }
 
 function drawMap(events) {
@@ -364,6 +394,39 @@ function safeLoadThreatLog() {
 function saveThreatLog() {
   try {
     localStorage.setItem(THREAT_LOG_STORAGE_KEY, JSON.stringify(threatLog.slice(0, THREAT_LOG_MAX)));
+  } catch {
+    return;
+  }
+}
+
+function safeLoadLiveCache() {
+  try {
+    const raw = localStorage.getItem(LIVE_CACHE_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    return {
+      events: Array.isArray(parsed.events) ? parsed.events : [],
+      mapEvents: Array.isArray(parsed.mapEvents) ? parsed.mapEvents : [],
+      sourceHealth: parsed.sourceHealth && typeof parsed.sourceHealth === "object" ? parsed.sourceHealth : {},
+      updatedAt: parsed.updatedAt || null
+    };
+  } catch {
+    return null;
+  }
+}
+
+function saveLiveCache(events = [], mapEvents = [], sourceHealth = {}) {
+  try {
+    const payload = {
+      events: Array.isArray(events) ? events.slice(0, 250) : [],
+      mapEvents: Array.isArray(mapEvents) ? mapEvents.slice(0, 300) : [],
+      sourceHealth: sourceHealth && typeof sourceHealth === "object" ? sourceHealth : {},
+      updatedAt: new Date().toISOString()
+    };
+    localStorage.setItem(LIVE_CACHE_STORAGE_KEY, JSON.stringify(payload));
+    lastSyncedAt = payload.updatedAt;
+    updateTopBadges();
   } catch {
     return;
   }
@@ -523,8 +586,18 @@ function renderGlossaryDetail() {
 function setLiveLoading(visible, text = "Loading live feeds...") {
   const el = document.getElementById("liveLoading");
   if (!el) return;
+  if (liveLoadingTimeoutId) {
+    clearTimeout(liveLoadingTimeoutId);
+    liveLoadingTimeoutId = null;
+  }
   el.textContent = text;
   el.classList.toggle("hidden", !visible);
+  if (visible) {
+    liveLoadingTimeoutId = window.setTimeout(() => {
+      el.classList.add("hidden");
+      liveLoadingTimeoutId = null;
+    }, 6000);
+  }
 }
 
 
@@ -643,7 +716,9 @@ function renderFeedStatusPanel(sourceHealth = {}) {
 
   const entries = Object.entries(sourceHealth || {});
   if (!entries.length) {
-    summaryEl.textContent = "Feed health unavailable.";
+    summaryEl.textContent = liveAlertEvents.length
+      ? "Feed health syncing (live events available)."
+      : "Feed health syncing...";
     gridEl.innerHTML = "";
     if (chipsEl) chipsEl.innerHTML = "";
     return;
@@ -700,11 +775,11 @@ function setLiveBadge(mode) {
   }
   if (mode === "degraded") {
     badge.classList.add("degraded");
-    badge.textContent = "DEGRADED";
+    badge.textContent = liveAlertEvents.length ? "LIVE • LOADING" : "LOADING";
     return;
   }
   badge.classList.add("offline");
-  badge.textContent = "OFFLINE";
+  badge.textContent = liveAlertEvents.length ? "LIVE • LOADING" : "OFFLINE";
 }
 
 function renderInsights(insights, report = {}, historical = []) {
@@ -1527,11 +1602,12 @@ async function init() {
   let lastGood = null;
   let seenLive = false;
   const FAILURE_GRACE = 3;
-  const REFRESH_MS = 45000;
+  const REFRESH_MS = 20000;
+  const INITIAL_SLA_MS = 3000;
   const healthEndpoints = resolveApiEndpoints("api/source-health");
   const liveEndpoints = resolveApiEndpoints("api/live-threats");
 
-  const fetchJsonWithTimeout = async (url, timeoutMs = 12000) => {
+  const fetchJsonWithTimeout = async (url, timeoutMs = 5000) => {
     const c = new AbortController();
     const id = setTimeout(() => c.abort(), timeoutMs);
     try {
@@ -1545,9 +1621,9 @@ async function init() {
     }
   };
 
-  const fetchFirstJson = async (endpoints) => {
+  const fetchFirstJson = async (endpoints, timeoutMs = 5000) => {
     for (const endpoint of endpoints) {
-      const data = await fetchJsonWithTimeout(endpoint);
+      const data = await fetchJsonWithTimeout(endpoint, timeoutMs);
       if (data) return data;
     }
     return null;
@@ -1569,16 +1645,24 @@ async function init() {
     renderThreatLog();
     updateHistoricalSourceNote();
     updateMapCount();
+    if (mode === "live") {
+      lastSyncedAt = new Date().toISOString();
+      updateTopBadges();
+    }
+    if (events.length || mapEvents.length) {
+      saveLiveCache(events, mapEvents, liveSourceHealth);
+    }
   };
 
   const refreshLiveData = async (isInitial = false) => {
     if (refreshInFlight) return;
     refreshInFlight = true;
-    if (!seenLive) setLiveLoading(true, "Loading live feeds...");
+    if (!seenLive) setLiveLoading(true, "Syncing live feeds...");
     try {
+      const timeoutMs = isInitial ? INITIAL_SLA_MS : 5000;
       const [health, live] = await Promise.all([
-        fetchFirstJson(healthEndpoints),
-        fetchFirstJson(liveEndpoints)
+        fetchFirstJson(healthEndpoints, timeoutMs),
+        fetchFirstJson(liveEndpoints, timeoutMs)
       ]);
       if (!live) throw new Error("live unavailable");
 
@@ -1597,19 +1681,38 @@ async function init() {
       consecutiveFailures += 1;
       if (lastGood && consecutiveFailures < FAILURE_GRACE) {
         applyLiveData(lastGood.events, lastGood.mapEvents, lastGood.sourceHealth, "degraded");
-        if (!seenLive) setLiveLoading(true, "Loading live feeds...");
+        if (!seenLive) setLiveLoading(true, "Syncing live feeds...");
       } else {
         const fallback = await fetchJsonWithTimeout("./data/sample-threats.json", 8000) || [];
-        const mode = isInitial ? "offline" : "degraded";
+        const mode = "degraded";
         applyLiveData(fallback, fallback, lastGood?.sourceHealth || {}, mode);
-        if (!seenLive) setLiveLoading(true, "Loading live feeds...");
+        if (!seenLive) setLiveLoading(true, "Syncing live feeds...");
       }
     } finally {
       refreshInFlight = false;
     }
   };
 
+  const cached = safeLoadLiveCache();
+  if (cached && (cached.events.length || cached.mapEvents.length)) {
+    lastSyncedAt = cached.updatedAt || lastSyncedAt;
+    updateTopBadges();
+    const mapEvents = cached.mapEvents.length ? cached.mapEvents : cached.events;
+    applyLiveData(cached.events, mapEvents, cached.sourceHealth || {}, "degraded");
+    setLiveLoading(true, "Syncing live feeds...");
+  } else {
+    const initialFallback = await fetchJsonWithTimeout("./data/sample-threats.json", 1200) || [];
+    if (initialFallback.length) {
+      applyLiveData(initialFallback, initialFallback, {}, "degraded");
+      setLiveLoading(true, "Syncing live feeds...");
+    }
+  }
+
   await refreshLiveData(true);
+  if (!seenLive) {
+    setLiveLoading(true, "Syncing live feeds...");
+  }
+  window.setInterval(updateTopBadges, 1000);
   renderSources();
   const sourcesToggle = document.getElementById("sourcesToggle");
   const sourcesWrap = document.getElementById("sourcesWrap");
