@@ -1,0 +1,20 @@
+{
+  "generated_at": 0,
+  "refreshed": false,
+  "count": 0,
+  "map_count": 0,
+  "map_count_context": 0,
+  "map_context_included": false,
+  "map_projected_alerts": 0,
+  "sources": {},
+  "source_health": {},
+  "events": [],
+  "map_events": [],
+  "map_semantics": {
+    "what_hotspot_means": "A geolocated malicious IOC/telemetry point from scheduled snapshot feeds.",
+    "location_note": "Coordinates are approximate: country-centroid or IP-geolocation.",
+    "not_shown_on_map": "Some advisory and non-geolocated records are excluded from map display.",
+    "projected_alerts_note": "Some non-geolocated alerts may be projected to regional hubs for visibility."
+  },
+  "snapshot_generated_at": null
+}

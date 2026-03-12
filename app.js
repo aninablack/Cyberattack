@@ -26,8 +26,7 @@ function updateTopBadges() {
 updateTopBadges();
 
 const MAPTILER_KEY = localStorage.getItem("MAPTILER_KEY") || "";
-const RUNTIME_API_BASE = (window.CYBER_API_BASE || localStorage.getItem("CYBER_API_BASE") || "").trim();
-const FALLBACK_API_BASE = "https://cyber-threat-api-pjpn.onrender.com";
+const SNAPSHOT_ENDPOINTS = ["./data/live-threats.json"];
 
 const sourceCatalog = [
   { name: "CISA KEV Catalog (JSON)", type: "Known exploited vulnerabilities", url: "https://www.cisa.gov/known-exploited-vulnerabilities-catalog" },
@@ -254,33 +253,8 @@ const scoreAlert = (e) => {
 
 const severityBand = (score) => (score >= 75 ? "high" : score >= 50 ? "medium" : "low");
 
-function joinApi(base, path) {
-  const cleanBase = String(base || "").replace(/\/+$/, "");
-  const cleanPath = String(path || "").replace(/^\/+/, "");
-  return `${cleanBase}/${cleanPath}`;
-}
-
 function uniqueStrings(values = []) {
   return [...new Set(values.filter((v) => typeof v === "string" && v.trim().length))];
-}
-
-function resolveApiEndpoints(path) {
-  const cleanPath = String(path || "").replace(/^\/+/, "");
-  if (RUNTIME_API_BASE) {
-    return [joinApi(RUNTIME_API_BASE, cleanPath)];
-  }
-  const isLocalhost = ["localhost", "127.0.0.1"].includes(window.location.hostname);
-  if (isLocalhost) {
-    return uniqueStrings([
-      `http://127.0.0.1:8090/${cleanPath}`,
-      `http://localhost:8090/${cleanPath}`
-    ]);
-  }
-  // Production: try same-origin first, then explicit hosted API fallback.
-  return uniqueStrings([
-    `${window.location.origin}/${cleanPath}`,
-    joinApi(FALLBACK_API_BASE, cleanPath)
-  ]);
 }
 
 function drawMap(events) {
@@ -432,6 +406,33 @@ function saveLiveCache(events = [], mapEvents = [], sourceHealth = {}) {
   }
 }
 
+function buildExpandedFallbackEvents(target = 120) {
+  const base = [...(Array.isArray(historicalEvents) ? historicalEvents : []), ...(liveMapEvents || [])];
+  if (!base.length) return [];
+  const out = [];
+  let i = 0;
+  while (out.length < target) {
+    const src = base[i % base.length];
+    const lat = Number(src.lat);
+    const lon = Number(src.lon);
+    if (Number.isFinite(lat) && Number.isFinite(lon)) {
+      const jitterLat = lat + (((i % 7) - 3) * 0.12);
+      const jitterLon = lon + ((((i * 3) % 7) - 3) * 0.12);
+      out.push({
+        ...src,
+        id: `${src.id || "fb"}-fb-${i}`,
+        source: `${src.source || "fallback"}-fallback`,
+        lat: Math.max(-85, Math.min(85, jitterLat)),
+        lon: Math.max(-179, Math.min(179, jitterLon)),
+        hoursAgo: Number.isFinite(Number(src.hoursAgo)) ? Number(src.hoursAgo) : (i % 48) + 1
+      });
+    }
+    i += 1;
+    if (i > target * 20) break;
+  }
+  return out;
+}
+
 function asUtc(ts) {
   if (!ts) return "n/a";
   const d = new Date(ts);
@@ -516,7 +517,37 @@ function buildBalancedDisplayEvents(events = []) {
 }
 
 function getMapModeEvents() {
-  return buildBalancedDisplayEvents(liveMapEvents);
+  const withCoords = Array.isArray(liveMapEvents) ? [...liveMapEvents] : [];
+  const seen = new Set(withCoords.map((e) => String(e.id || "")));
+  const hasCoords = (e) => Number.isFinite(Number(e?.lat)) && Number.isFinite(Number(e?.lon));
+  const hubs = [
+    [37.09, -95.71],   // US
+    [51.16, 10.45],    // EU
+    [20.59, 78.96],    // IN
+    [1.35, 103.82],    // SG
+    [-14.23, -51.92],  // BR
+    [35.86, 104.19],   // CN
+    [-25.27, 133.77],  // AU
+    [55.37, -3.43]     // GB
+  ];
+  const alertOnly = (Array.isArray(liveAlertEvents) ? liveAlertEvents : []).filter((e) => !hasCoords(e));
+  const projectLimit = 180;
+  for (let i = 0; i < alertOnly.length && i < projectLimit; i += 1) {
+    const e = alertOnly[i];
+    if (seen.has(String(e.id || ""))) continue;
+    const hub = hubs[i % hubs.length];
+    const jitterLat = (((i % 9) - 4) * 0.28);
+    const jitterLon = ((((i * 3) % 9) - 4) * 0.28);
+    withCoords.push({
+      ...e,
+      lat: Number((hub[0] + jitterLat).toFixed(4)),
+      lon: Number((hub[1] + jitterLon).toFixed(4)),
+      locationQuality: "projected-from-alert (approximate)",
+      source: `${e.source || "live"}-projected`
+    });
+    seen.add(String(e.id || ""));
+  }
+  return buildBalancedDisplayEvents(withCoords);
 }
 
 function getGlossaryEvents() {
@@ -720,7 +751,7 @@ function renderFeedStatusPanel(sourceHealth = {}) {
       ? "Feed health syncing (live events available)."
       : "Feed health syncing...";
     gridEl.innerHTML = "";
-    if (chipsEl) chipsEl.innerHTML = "";
+    if (chipsEl) chipsEl.innerHTML = `<span class="feed-mini-chip empty">syncing</span>`;
     return;
   }
 
@@ -1604,8 +1635,7 @@ async function init() {
   const FAILURE_GRACE = 3;
   const REFRESH_MS = 20000;
   const INITIAL_SLA_MS = 3000;
-  const healthEndpoints = resolveApiEndpoints("api/source-health");
-  const liveEndpoints = resolveApiEndpoints("api/live-threats");
+  const snapshotEndpoints = uniqueStrings(SNAPSHOT_ENDPOINTS);
 
   const fetchJsonWithTimeout = async (url, timeoutMs = 5000) => {
     const c = new AbortController();
@@ -1660,19 +1690,16 @@ async function init() {
     if (!seenLive) setLiveLoading(true, "Syncing live feeds...");
     try {
       const timeoutMs = isInitial ? INITIAL_SLA_MS : 5000;
-      const [health, live] = await Promise.all([
-        fetchFirstJson(healthEndpoints, timeoutMs),
-        fetchFirstJson(liveEndpoints, timeoutMs)
-      ]);
+      const live = await fetchFirstJson(snapshotEndpoints, timeoutMs);
       if (!live) throw new Error("live unavailable");
 
       const events = live.events || [];
       let mapEvents = live.map_events || [];
       if (!mapEvents.length) {
-        const fallback = await fetchJsonWithTimeout("./data/sample-threats.json", 8000);
-        if (Array.isArray(fallback) && fallback.length) mapEvents = fallback;
+        const fallback = buildExpandedFallbackEvents(120);
+        if (fallback.length) mapEvents = fallback;
       }
-      lastGood = { events, mapEvents, sourceHealth: live.source_health || health?.sources || {} };
+      lastGood = { events, mapEvents, sourceHealth: live.source_health || {} };
       consecutiveFailures = 0;
       seenLive = true;
       applyLiveData(events, mapEvents, lastGood.sourceHealth, "live");
@@ -1683,7 +1710,7 @@ async function init() {
         applyLiveData(lastGood.events, lastGood.mapEvents, lastGood.sourceHealth, "degraded");
         if (!seenLive) setLiveLoading(true, "Syncing live feeds...");
       } else {
-        const fallback = await fetchJsonWithTimeout("./data/sample-threats.json", 8000) || [];
+        const fallback = buildExpandedFallbackEvents(120);
         const mode = "degraded";
         applyLiveData(fallback, fallback, lastGood?.sourceHealth || {}, mode);
         if (!seenLive) setLiveLoading(true, "Syncing live feeds...");
@@ -1701,7 +1728,7 @@ async function init() {
     applyLiveData(cached.events, mapEvents, cached.sourceHealth || {}, "degraded");
     setLiveLoading(true, "Syncing live feeds...");
   } else {
-    const initialFallback = await fetchJsonWithTimeout("./data/sample-threats.json", 1200) || [];
+    const initialFallback = buildExpandedFallbackEvents(120);
     if (initialFallback.length) {
       applyLiveData(initialFallback, initialFallback, {}, "degraded");
       setLiveLoading(true, "Syncing live feeds...");

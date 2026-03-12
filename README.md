@@ -16,66 +16,46 @@ python3 -m http.server 8080
 
 Then open `http://localhost:8080`.
 
-## Production Readiness (Netlify + Render)
+## Production Readiness (Netlify + GitHub Snapshot)
 
-### 1) Deploy backend to Render
-
-This repo includes [`render.yaml`](/Users/aninablack/Documents/New%20project/cyber-threat-dashboard/render.yaml) for a Python web service.
-
-Render settings are already defined:
-- root: `backend/`
-- build: `pip install -r requirements.txt`
-- start: `uvicorn main:app --host 0.0.0.0 --port $PORT`
-
-Set env vars in Render dashboard:
-- Required for optional feeds:
-  - `SHODAN_API_KEY`
-  - `CENSYS_API_ID`
-  - `CENSYS_API_SECRET`
-  - `URLSCAN_API_KEY` (optional, improves stability/rate limits)
-- Existing optional keys:
-  - `OTX_API_KEY`
-  - `PULSEDIVE_API_KEY`
-  - `CF_API_TOKEN`
-  - `ABUSEIPDB_API_KEY`
-
-After deploy, copy your Render API URL, e.g.:
-- `https://cyber-threat-api.onrender.com`
-
-### 2) Deploy frontend to Netlify
+### 1) Deploy frontend to Netlify
 
 Deploy this project root as a static site:
 - Publish directory: `.`
 - Build command: *(none required)*
 
-### 3) Point frontend to production API
+### 2) Enable scheduled snapshot generation in GitHub
 
-Set API base URL in browser (one-time):
+This repo includes:
+- `.github/workflows/live-snapshot.yml`
+- `scripts/generate_live_snapshot.py`
 
-```js
-localStorage.setItem("CYBER_API_BASE", "https://YOUR-RENDER-SERVICE.onrender.com");
-location.reload();
-```
+The workflow runs every 30 minutes and writes:
+- `data/live-threats.json`
 
-To clear and return to localhost behavior:
+Netlify then serves this file directly. No always-on backend is required.
 
-```js
-localStorage.removeItem("CYBER_API_BASE");
-location.reload();
-```
+Add optional API secrets in GitHub:
+- `NVD_API_KEY`
+- `ABUSEIPDB_API_KEY`
+- `ABUSECH_API_KEY`
+- `OTX_API_KEY`
+- `PULSEDIVE_API_KEY`
+- `CF_API_TOKEN`
+- `URLSCAN_API_KEY`
+- `SHODAN_API_KEY`
+- `CENSYS_API_ID`
+- `CENSYS_API_SECRET`
 
-API resolution behavior in frontend:
-- If `window.CYBER_API_BASE` or `localStorage.CYBER_API_BASE` is set -> uses that.
-- On localhost -> uses `127.0.0.1:8090` / `localhost:8090`.
-- On non-localhost with no override -> uses same-origin `/api/...`.
+Path in GitHub:
+- `Settings` -> `Secrets and variables` -> `Actions` -> `New repository secret`
 
-### 4) Optional: set API base without localStorage
+### 3) Run first snapshot manually
 
-You can inject before `app.js` in `index.html`:
+In GitHub:
+- `Actions` -> `Refresh Live Snapshot` -> `Run workflow`
 
-```html
-<script>window.CYBER_API_BASE = "https://YOUR-RENDER-SERVICE.onrender.com";</script>
-```
+After it completes, confirm `data/live-threats.json` was updated, then Netlify auto-redeploys.
 
 ## Map Provider (MapTiler)
 
@@ -88,25 +68,22 @@ localStorage.setItem("MAPTILER_KEY", "YOUR_MAPTILER_KEY")
 location.reload()
 ```
 
-## Run Live Data API (optional but recommended)
+## Run Live Snapshot Locally (optional)
 
 ```bash
-cd '/Users/aninablack/Documents/New project/cyber-threat-dashboard/backend'
+cd '/Users/aninablack/Documents/New project/cyber-threat-dashboard'
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn main:app --host 0.0.0.0 --port 8090
+pip install -r backend/requirements.txt
+python scripts/generate_live_snapshot.py
 ```
 
-API endpoint:
-
-- `http://localhost:8090/api/live-threats`
-
-The dashboard automatically tries this live endpoint first and falls back to local sample data if unavailable.
+This writes/refreshes:
+- `data/live-threats.json`
 
 ### Optional per-feed caps (env)
 
-You can tune live feed volume without code edits by exporting env vars before starting `uvicorn`:
+You can tune feed volume without code edits by exporting env vars before running snapshot generation:
 
 ```bash
 export MAX_THREATFOX_ROWS=350

@@ -1810,6 +1810,76 @@ button {
   color: #9bffd9;
 }
 @media (max-width: 900px) {
+  .topbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 16px 14px;
+  }
+  .topbar h1 {
+    font-size: 0.85rem;
+    line-height: 1.25;
+    margin-bottom: 4px;
+  }
+  .topbar p {
+    font-size: 0.7rem;
+    line-height: 1.3;
+  }
+  .top-right {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    align-items: center;
+  }
+  .live-badge,
+  .badge {
+    font-size: 0.68rem;
+    padding: 6px 8px;
+    justify-self: start;
+  }
+  #lastSyncBadge {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+  .feed-status-util {
+    grid-column: 1 / -1;
+    width: 100%;
+    display: block;
+  }
+  #feedStatusToggle {
+    display: none;
+  }
+  .feed-status-util #feedStatusWrap {
+    display: none !important;
+  }
+  .feed-inline-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: flex-start;
+    align-content: start;
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
+    margin-top: 0;
+  }
+  .feed-mini-chip {
+    font-size: 0.64rem;
+    padding: 4px 7px;
+  }
+  .panel-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .map-head-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+  #mapCount.sub {
+    font-size: 0.76rem;
+  }
   .grid { grid-template-columns: 1fr; }
   .span-2 { grid-column: span 1; }
   .glossary-panel {
