@@ -88,6 +88,7 @@ MAX_KEV_FETCH = env_int("MAX_KEV_FETCH", 300)
 MAX_EPSS_SAMPLE = env_int("MAX_EPSS_SAMPLE", 100)
 MAX_THREATFOX_ROWS = env_int("MAX_THREATFOX_ROWS", 500)
 MAX_OPENPHISH_ROWS = env_int("MAX_OPENPHISH_ROWS", 120)
+MAX_PHISHING_ARMY_ROWS = env_int("MAX_PHISHING_ARMY_ROWS", 120)
 MAX_URLHAUS_ROWS = env_int("MAX_URLHAUS_ROWS", 250)
 MAX_OTX_PULSES = env_int("MAX_OTX_PULSES", 40)
 MAX_OTX_IP_ROWS = env_int("MAX_OTX_IP_ROWS", 140)
@@ -900,6 +901,59 @@ async def fetch_phishtank(client: httpx.AsyncClient) -> list[dict[str, Any]]:
                 "hoursAgo": hours_since_iso8601(submitted or verified, fallback=9),
                 "kev": 0,
                 "epss": 0.0,
+            }
+        )
+    return out
+
+
+async def fetch_phishing_army(client: httpx.AsyncClient) -> list[dict[str, Any]]:
+    # Community phishing URL blocklist (free, no key).
+    endpoint_candidates = [
+        "https://phishing.army/download/phishing_army_blocklist_extended.txt",
+        "https://phishing.army/download/phishing_army_blocklist.txt",
+    ]
+    rows: list[str] = []
+    for url in endpoint_candidates:
+        try:
+            text = (await client.get(url, timeout=25)).text
+        except Exception:
+            continue
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip() and not ln.strip().startswith("#")]
+        lines = [ln for ln in lines if ln.startswith("http://") or ln.startswith("https://")]
+        if lines:
+            rows = lines[:MAX_PHISHING_ARMY_ROWS]
+            break
+    if not rows:
+        return []
+
+    host_to_ip = await resolve_url_hosts_to_ipv4(rows)
+    geo = await geolocate_ips_ip_api(client, list(host_to_ip.values()))
+    out: list[dict[str, Any]] = []
+    for i, u in enumerate(rows):
+        host = safe_url_host(u)
+        ip = host_to_ip.get(host) if host else None
+        g = geo.get(ip) if ip else None
+        out.append(
+            {
+                "id": f"phishing-army-{i}",
+                "country": g.get("country", "GLOBAL") if g else "GLOBAL",
+                "lat": g.get("lat") if g else None,
+                "lon": g.get("lon") if g else None,
+                "type": "Phishing Army URL",
+                "attackKind": "phishing / social engineering",
+                "source": "phishing-army+dns+ip-api" if g else "phishing-army",
+                "ip": ip,
+                "ioc": u,
+                "firstSeen": None,
+                "locationQuality": "ip-geolocated (approximate)" if g else "not-geolocated",
+                "confidence": 0.75,
+                "assetCriticality": 3,
+                "hoursAgo": 6,
+                "kev": 0,
+                "epss": 0.0,
+                "attackTactic": "Initial Access",
+                "attackTechniqueId": "T1566",
+                "attackTechniqueName": "Phishing",
             }
         )
     return out
@@ -2534,6 +2588,7 @@ async def build_live_events(
         "emergingthreats": "error",
         "greensnow": "error",
         "openphish": "error",
+        "phishing_army": "error",
         "phishtank": "error",
         "urlhaus": "error",
         "malwarebazaar": "error",
@@ -2628,6 +2683,7 @@ async def build_live_events(
             run_feed("emergingthreats", fetch_emergingthreats_compromised),
             run_feed("greensnow", fetch_greensnow_blacklist),
             run_feed("openphish", fetch_openphish),
+            run_feed("phishing_army", fetch_phishing_army),
             run_feed("phishtank", fetch_phishtank),
             run_feed("urlhaus", fetch_urlhaus),
             run_feed("malwarebazaar", fetch_malwarebazaar),
@@ -2651,6 +2707,7 @@ async def build_live_events(
             emergingthreats,
             greensnow,
             openphish,
+            phishing_army,
             phishtank,
             urlhaus,
             malwarebazaar,
@@ -2704,7 +2761,7 @@ async def build_live_events(
         )
 
     # Non-geolocated but live alert events.
-    live_alert_only = openphish + phishtank + malwarebazaar + depsdev + osv + pulsedive_alert_only + circl + cisa_alerts + urlscan
+    live_alert_only = openphish + phishing_army + phishtank + malwarebazaar + depsdev + osv + pulsedive_alert_only + circl + cisa_alerts + urlscan
     unique_kinds = {str(e.get("attackKind", "")).lower() for e in live_geo}
     if len(live_geo) < 20 or len(unique_kinds) < 2:
         context = build_context_events(limit=MAX_CONTEXT_EVENTS)
