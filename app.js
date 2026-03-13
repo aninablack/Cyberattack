@@ -578,6 +578,7 @@ function renderObservationSummary() {
     acc.all = (acc.all || 0) + 1;
     return acc;
   }, {});
+  const total = Math.max(1, Number(counts.all || 0));
   const liveThreatChips = attackGlossary
     .filter((g) => g.key !== "all")
     .map((g) => ({ ...g, count: counts[g.key] || 0 }))
@@ -1578,6 +1579,7 @@ function renderAttackGlossary(events = []) {
     .map(
       (g) => {
         const observed = Number(counts[g.key] || 0);
+        const pct = Math.round((observed / total) * 100);
         return `
       <article class="glossary-item quiet ${activeThreatKey === g.key ? "active" : ""} ${observed === 0 ? "zero" : ""}" data-threat-key="${g.key}">
         <div class="glossary-head">
@@ -1587,6 +1589,7 @@ function renderAttackGlossary(events = []) {
           </h3>
           <div class="glossary-right">
             <span class="glossary-count" style="border-color:color-mix(in srgb, ${THREAT_COLORS[g.key] || THREAT_COLORS.unknown} 40%, #2d4560);color:${THREAT_COLORS[g.key] || THREAT_COLORS.unknown};">${observed}</span>
+            <span class="small" style="min-width:42px;text-align:right;">${pct}%</span>
             <button type="button" class="glossary-toggle" aria-expanded="${expandedThreatKey === g.key ? "true" : "false"}">${expandedThreatKey === g.key ? "−" : "+"}</button>
           </div>
         </div>
