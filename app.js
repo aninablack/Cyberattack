@@ -531,7 +531,7 @@ function getMapModeEvents() {
     [55.37, -3.43]     // GB
   ];
   const alertOnly = (Array.isArray(liveAlertEvents) ? liveAlertEvents : []).filter((e) => !hasCoords(e));
-  const projectLimit = 180;
+  const projectLimit = 260;
   for (let i = 0; i < alertOnly.length && i < projectLimit; i += 1) {
     const e = alertOnly[i];
     if (seen.has(String(e.id || ""))) continue;

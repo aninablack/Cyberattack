@@ -2811,7 +2811,7 @@ def build_balanced_live_map_events(
 def build_projected_alert_map_events(
     events: list[dict[str, Any]],
     existing_map_events: list[dict[str, Any]],
-    max_add: int = 24,
+    max_add: int = 60,
 ) -> list[dict[str, Any]]:
     # Project non-geolocated live alerts to regional hubs so glossary categories
     # are represented on the live map when geolocation is unavailable.
@@ -2926,10 +2926,10 @@ async def live_threats(force_refresh: bool = False) -> dict[str, Any]:
     # Add projected live alerts when non-botnet categories are underrepresented.
     map_unique_kinds = {infer_attack_kind(str(e.get("attackKind") or e.get("type"))) for e in map_events}
     map_non_botnet_count = sum(1 for e in map_events if infer_attack_kind(str(e.get("attackKind") or e.get("type"))) != "botnet c2")
-    needs_projection = (len(map_unique_kinds) < 8) or (map_non_botnet_count < 24)
+    needs_projection = (len(map_unique_kinds) < 9) or (map_non_botnet_count < 40)
     projected_added = 0
     if needs_projection:
-        projected = build_projected_alert_map_events(events=events, existing_map_events=map_events, max_add=40)
+        projected = build_projected_alert_map_events(events=events, existing_map_events=map_events, max_add=90)
         if projected:
             room = max(0, MAX_TOTAL_EVENTS - len(map_events))
             to_add = projected[:room]
