@@ -1567,6 +1567,7 @@ function renderAttackGlossary(events = []) {
     acc.all = (acc.all || 0) + 1;
     return acc;
   }, {});
+  const total = Number(counts.all || 0) || 1;
   const rows = [...attackGlossary].sort((a, b) => {
     const ca = Number(counts[a.key] || 0);
     const cb = Number(counts[b.key] || 0);
