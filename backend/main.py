@@ -89,6 +89,7 @@ MAX_EPSS_SAMPLE = env_int("MAX_EPSS_SAMPLE", 100)
 MAX_THREATFOX_ROWS = env_int("MAX_THREATFOX_ROWS", 500)
 MAX_OPENPHISH_ROWS = env_int("MAX_OPENPHISH_ROWS", 120)
 MAX_PHISHING_ARMY_ROWS = env_int("MAX_PHISHING_ARMY_ROWS", 120)
+MAX_PHISHING_DB_ROWS = env_int("MAX_PHISHING_DB_ROWS", 120)
 MAX_URLHAUS_ROWS = env_int("MAX_URLHAUS_ROWS", 250)
 MAX_OTX_PULSES = env_int("MAX_OTX_PULSES", 40)
 MAX_OTX_IP_ROWS = env_int("MAX_OTX_IP_ROWS", 140)
@@ -954,6 +955,70 @@ async def fetch_phishing_army(client: httpx.AsyncClient) -> list[dict[str, Any]]
                 "attackTactic": "Initial Access",
                 "attackTechniqueId": "T1566",
                 "attackTechniqueName": "Phishing",
+            }
+        )
+    return out
+
+
+def classify_phishing_url_attack_kind(url: str) -> str:
+    u = (url or "").lower()
+    # Heuristic split to improve glossary balance for credential-theft-like phishing lures.
+    cred_markers = ("login", "signin", "sign-in", "verify", "account", "webscr", "auth", "password", "recovery")
+    return "credential theft" if any(m in u for m in cred_markers) else "phishing / social engineering"
+
+
+async def fetch_phishing_database(client: httpx.AsyncClient) -> list[dict[str, Any]]:
+    # Community maintained phishing URL lists (free, no key).
+    endpoint_candidates = [
+        "https://raw.githubusercontent.com/mitchellkrogza/Phishing.Database/master/phishing-links-NEW-today.txt",
+        "https://raw.githubusercontent.com/mitchellkrogza/Phishing.Database/master/phishing-links-NEW-active.txt",
+    ]
+    rows: list[str] = []
+    for url in endpoint_candidates:
+        try:
+            text = (await client.get(url, timeout=25)).text
+        except Exception:
+            continue
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip() and not ln.strip().startswith("#")]
+        lines = [ln for ln in lines if ln.startswith("http://") or ln.startswith("https://")]
+        if lines:
+            rows = lines[:MAX_PHISHING_DB_ROWS]
+            break
+    if not rows:
+        return []
+
+    host_to_ip = await resolve_url_hosts_to_ipv4(rows)
+    geo = await geolocate_ips_ip_api(client, list(host_to_ip.values()))
+    out: list[dict[str, Any]] = []
+    for i, u in enumerate(rows):
+        host = safe_url_host(u)
+        ip = host_to_ip.get(host) if host else None
+        g = geo.get(ip) if ip else None
+        attack_kind = classify_phishing_url_attack_kind(u)
+        tactic = "Credential Access" if attack_kind == "credential theft" else "Initial Access"
+        technique = "T1110" if attack_kind == "credential theft" else "T1566"
+        technique_name = "Brute Force / Credential Stuffing" if attack_kind == "credential theft" else "Phishing"
+        out.append(
+            {
+                "id": f"phishing-db-{i}",
+                "country": g.get("country", "GLOBAL") if g else "GLOBAL",
+                "lat": g.get("lat") if g else None,
+                "lon": g.get("lon") if g else None,
+                "type": "Phishing Database URL",
+                "attackKind": attack_kind,
+                "source": "phishing-database+dns+ip-api" if g else "phishing-database",
+                "ip": ip,
+                "ioc": u,
+                "firstSeen": None,
+                "locationQuality": "ip-geolocated (approximate)" if g else "not-geolocated",
+                "confidence": 0.74,
+                "assetCriticality": 3,
+                "hoursAgo": 6,
+                "kev": 0,
+                "epss": 0.0,
+                "attackTactic": tactic,
+                "attackTechniqueId": technique,
+                "attackTechniqueName": technique_name,
             }
         )
     return out
@@ -2589,6 +2654,7 @@ async def build_live_events(
         "greensnow": "error",
         "openphish": "error",
         "phishing_army": "error",
+        "phishing_database": "error",
         "phishtank": "error",
         "urlhaus": "error",
         "malwarebazaar": "error",
@@ -2684,6 +2750,7 @@ async def build_live_events(
             run_feed("greensnow", fetch_greensnow_blacklist),
             run_feed("openphish", fetch_openphish),
             run_feed("phishing_army", fetch_phishing_army),
+            run_feed("phishing_database", fetch_phishing_database),
             run_feed("phishtank", fetch_phishtank),
             run_feed("urlhaus", fetch_urlhaus),
             run_feed("malwarebazaar", fetch_malwarebazaar),
@@ -2708,6 +2775,7 @@ async def build_live_events(
             greensnow,
             openphish,
             phishing_army,
+            phishing_database,
             phishtank,
             urlhaus,
             malwarebazaar,
@@ -2761,7 +2829,7 @@ async def build_live_events(
         )
 
     # Non-geolocated but live alert events.
-    live_alert_only = openphish + phishing_army + phishtank + malwarebazaar + depsdev + osv + pulsedive_alert_only + circl + cisa_alerts + urlscan
+    live_alert_only = openphish + phishing_army + phishing_database + phishtank + malwarebazaar + depsdev + osv + pulsedive_alert_only + circl + cisa_alerts + urlscan
     unique_kinds = {str(e.get("attackKind", "")).lower() for e in live_geo}
     if len(live_geo) < 20 or len(unique_kinds) < 2:
         context = build_context_events(limit=MAX_CONTEXT_EVENTS)
