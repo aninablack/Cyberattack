@@ -16,7 +16,7 @@ python3 -m http.server 8080
 
 Then open `http://localhost:8080`.
 
-## Production Readiness (Netlify + GitHub Snapshot)
+## Production Readiness (Netlify + GitHub Snapshot via Gist)
 
 ### 1) Deploy frontend to Netlify
 
@@ -29,11 +29,11 @@ Deploy this project root as a static site:
 This repo includes:
 - `.github/workflows/live-snapshot.yml`
 - `scripts/generate_live_snapshot.py`
+- `scripts/publish_snapshot_to_gist.py`
 
-The workflow runs every 30 minutes and writes:
-- `data/live-threats.json`
+The workflow runs on a schedule, generates a snapshot, and publishes it to a GitHub Gist.
 
-Netlify then serves this file directly. No always-on backend is required.
+No always-on backend is required, and Netlify no longer needs to redeploy for each snapshot update.
 
 Add optional API secrets in GitHub:
 - `NVD_API_KEY`
@@ -43,6 +43,8 @@ Add optional API secrets in GitHub:
 - `PULSEDIVE_API_KEY`
 - `CF_API_TOKEN`
 - `URLSCAN_API_KEY`
+- `SNAPSHOT_GIST_ID` (the target Gist ID)
+- `SNAPSHOT_GIST_TOKEN` (PAT with `gist` scope)
 
 Path in GitHub:
 - `Settings` -> `Secrets and variables` -> `Actions` -> `New repository secret`
@@ -52,7 +54,12 @@ Path in GitHub:
 In GitHub:
 - `Actions` -> `Refresh Live Snapshot` -> `Run workflow`
 
-After it completes, confirm `data/live-threats.json` was updated, then Netlify auto-redeploys.
+After it completes, open the workflow logs and copy the printed `Raw URL`.
+Then set either:
+- `window.CYBER_SNAPSHOT_URL = "RAW_URL"` before app load, or
+- `<meta name="cyber-snapshot-url" content="RAW_URL">` in `index.html`.
+
+The app falls back to `./data/live-threats.json` if no remote URL is provided.
 
 ## Map Provider (MapTiler)
 

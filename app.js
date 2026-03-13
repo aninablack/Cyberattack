@@ -26,7 +26,17 @@ function updateTopBadges() {
 updateTopBadges();
 
 const MAPTILER_KEY = localStorage.getItem("MAPTILER_KEY") || "";
-const SNAPSHOT_ENDPOINTS = ["./data/live-threats.json"];
+const SNAPSHOT_ENDPOINTS = (() => {
+  const fromWindow = (typeof window !== "undefined" && typeof window.CYBER_SNAPSHOT_URL === "string")
+    ? window.CYBER_SNAPSHOT_URL.trim()
+    : "";
+  const fromMeta = (() => {
+    if (typeof document === "undefined") return "";
+    const el = document.querySelector('meta[name="cyber-snapshot-url"]');
+    return el?.content?.trim() || "";
+  })();
+  return uniqueStrings([fromWindow, fromMeta, "./data/live-threats.json"]);
+})();
 
 const sourceCatalog = [
   { name: "CISA KEV Catalog (JSON)", type: "Known exploited vulnerabilities", url: "https://www.cisa.gov/known-exploited-vulnerabilities-catalog" },
@@ -292,7 +302,7 @@ function drawMap(events) {
       popupAnchor: [0, -Math.round(size / 2)],
       html: `
         <div class="threat-pin ${isLegacy ? "legacy" : ""}" style="--threat-color:${color};width:${size}px;height:${size}px;">
-          <img src="${iconPath}" alt="${threatKey}" />
+          <img src="${iconPath}" alt="${threatKey}" loading="lazy" onerror="this.onerror=null;this.src='./assets/icons/unknown.svg';" />
         </div>
       `
     });
