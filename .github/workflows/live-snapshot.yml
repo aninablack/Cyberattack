@@ -3,11 +3,13 @@ name: Refresh Live Snapshot
 on:
   workflow_dispatch:
   schedule:
-  - cron: "*/5 * * * *"
+    - cron: "*/5 * * * *"
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   refresh:
@@ -33,27 +35,22 @@ jobs:
           PULSEDIVE_API_KEY: ${{ secrets.PULSEDIVE_API_KEY }}
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           URLSCAN_API_KEY: ${{ secrets.URLSCAN_API_KEY }}
-          SHODAN_API_KEY: ${{ secrets.SHODAN_API_KEY }}
-          CENSYS_API_ID: ${{ secrets.CENSYS_API_ID }}
-          CENSYS_API_SECRET: ${{ secrets.CENSYS_API_SECRET }}
-          MAX_TOTAL_EVENTS: "320"
-          MAX_URLHAUS_ROWS: "120"
-          MAX_OPENPHISH_ROWS: "80"
-          MAX_PHISHTANK_ROWS: "80"
-          MAX_SPAMHAUS_CIDRS: "60"
-          MAX_FIREHOL_IPS: "60"
+          MAX_TOTAL_EVENTS: "500"
+          MAX_URLHAUS_ROWS: "180"
+          MAX_OPENPHISH_ROWS: "120"
+          MAX_PHISHTANK_ROWS: "120"
+          MAX_SPAMHAUS_CIDRS: "120"
+          MAX_FIREHOL_IPS: "120"
           MAX_KEV_FETCH: "120"
           MAX_EPSS_SAMPLE: "60"
-          MAX_OSV_EVENTS: "40"
-          MAX_RANSOMWARE_LIVE_ROWS: "40"
-          MAX_CIRCL_ROWS: "20"
+          MAX_OSV_EVENTS: "60"
+          MAX_RANSOMWARE_LIVE_ROWS: "70"
+          MAX_CIRCL_ROWS: "40"
         run: python scripts/generate_live_snapshot.py
 
-      - name: Commit and push if changed
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/live-threats.json
-          git diff --cached --quiet && exit 0
-          git commit -m "chore: refresh live snapshot"
-          git push
+      - name: Publish snapshot to Gist
+        env:
+          GIST_ID: ${{ secrets.SNAPSHOT_GIST_ID }}
+          GIST_TOKEN: ${{ secrets.SNAPSHOT_GIST_TOKEN }}
+          GIST_FILENAME: "live-threats.json"
+        run: python scripts/publish_snapshot_to_gist.py
