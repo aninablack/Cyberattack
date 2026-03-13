@@ -2684,25 +2684,51 @@ def capped_by_source(events: list[dict[str, Any]], per_source_cap: int, total_ca
 
 
 def rebalance_map_kind_share(events: list[dict[str, Any]], max_botnet_ratio: float = 0.45) -> list[dict[str, Any]]:
+    # Proportional balancing: preserve real dominance, but cap flood-prone kinds.
     if not events:
         return events
-    botnet = [e for e in events if infer_attack_kind(str(e.get("attackKind") or e.get("type"))) == "botnet c2"]
-    other = [e for e in events if infer_attack_kind(str(e.get("attackKind") or e.get("type"))) != "botnet c2"]
-    if not other:
+
+    by_kind: dict[str, list[dict[str, Any]]] = {}
+    for e in events:
+        kind = infer_attack_kind(str(e.get("attackKind") or e.get("type")))
+        by_kind.setdefault(kind, []).append(e)
+    if len(by_kind) <= 1:
         return events
-    cap = int(len(events) * max_botnet_ratio)
-    cap = max(10, cap)
-    botnet = botnet[:cap]
-    # Interleave for visual spread (does not change data semantics).
+
+    total = len(events)
+    allowed: dict[str, int] = {}
+    for kind, rows in by_kind.items():
+        share = len(rows) / total
+        # Keep proportional truth, but soften heavy concentration.
+        # sqrt() reduces domination while still reflecting relative volume.
+        cap = int((share ** 0.5) * total * 0.75)
+        cap = max(2, min(len(rows), cap))
+        allowed[kind] = cap
+
+    if "botnet c2" in allowed:
+        botnet_cap = max(12, int(total * max_botnet_ratio))
+        allowed["botnet c2"] = min(allowed["botnet c2"], botnet_cap)
+
     out: list[dict[str, Any]] = []
-    i = 0
-    while i < len(other) or i < len(botnet):
-        if i < len(other):
-            out.append(other[i])
-        if i < len(botnet):
-            out.append(botnet[i])
-        i += 1
-    return out
+    idx = 0
+    kinds = sorted(by_kind.keys(), key=lambda k: len(by_kind[k]), reverse=True)
+    # Round-robin keeps visual spread while respecting per-kind caps.
+    while True:
+        progressed = False
+        for kind in kinds:
+            rows = by_kind[kind]
+            if idx >= len(rows):
+                continue
+            current = sum(1 for x in out if infer_attack_kind(str(x.get("attackKind") or x.get("type"))) == kind)
+            if current >= allowed.get(kind, 0):
+                continue
+            out.append(rows[idx])
+            progressed = True
+        if not progressed:
+            break
+        idx += 1
+
+    return out if out else events
 
 
 async def build_live_events(
