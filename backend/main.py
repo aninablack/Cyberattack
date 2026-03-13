@@ -126,6 +126,7 @@ OSV_REFRESH_EVERY = env_int("OSV_REFRESH_EVERY", 2, min_value=1, max_value=48)
 CISA_REFRESH_EVERY = env_int("CISA_REFRESH_EVERY", 3, min_value=1, max_value=48)
 URLSCAN_REFRESH_EVERY = env_int("URLSCAN_REFRESH_EVERY", 4, min_value=1, max_value=96)
 URLSCAN_DAILY_REQUEST_LIMIT = env_int("URLSCAN_DAILY_REQUEST_LIMIT", 120, min_value=1, max_value=5000)
+URLSCAN_DAILY_HEADROOM = env_int("URLSCAN_DAILY_HEADROOM", 20, min_value=0, max_value=2000)
 
 state: dict[str, Any] = {
     "last_fetch": 0.0,
@@ -422,7 +423,9 @@ def reserve_urlscan_request() -> bool:
     if day != today:
         day = today
         used = 0
-    if used >= URLSCAN_DAILY_REQUEST_LIMIT:
+    # Keep safety headroom so we do not run at the edge of provider quota.
+    allowed_ceiling = max(0, URLSCAN_DAILY_REQUEST_LIMIT - URLSCAN_DAILY_HEADROOM)
+    if used >= allowed_ceiling:
         URLSCAN_BUDGET_STATE["day"] = day
         URLSCAN_BUDGET_STATE["used"] = used
         save_urlscan_budget()
