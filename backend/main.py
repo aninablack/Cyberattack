@@ -63,9 +63,6 @@ OTX_API_KEY = os.getenv("OTX_API_KEY", "").strip()
 PULSEDIVE_API_KEY = os.getenv("PULSEDIVE_API_KEY", "").strip()
 CF_API_TOKEN = os.getenv("CF_API_TOKEN", "").strip()
 URLSCAN_API_KEY = os.getenv("URLSCAN_API_KEY", "").strip()
-SHODAN_API_KEY = os.getenv("SHODAN_API_KEY", "").strip()
-CENSYS_API_ID = os.getenv("CENSYS_API_ID", "").strip()
-CENSYS_API_SECRET = os.getenv("CENSYS_API_SECRET", "").strip()
 
 
 def debug_feed(source: str, message: str) -> None:
@@ -101,8 +98,6 @@ MAX_RANSOMWARE_LIVE_ROWS = env_int("MAX_RANSOMWARE_LIVE_ROWS", 120)
 MAX_DDOS_TELEMETRY_ROWS = env_int("MAX_DDOS_TELEMETRY_ROWS", 120)
 MAX_CISA_ALERT_ROWS = env_int("MAX_CISA_ALERT_ROWS", 80)
 MAX_URLSCAN_ROWS = env_int("MAX_URLSCAN_ROWS", 40)
-MAX_SHODAN_ROWS = env_int("MAX_SHODAN_ROWS", 40)
-MAX_CENSYS_ROWS = env_int("MAX_CENSYS_ROWS", 40)
 MAX_MALWAREBAZAAR_ROWS = env_int("MAX_MALWAREBAZAAR_ROWS", 80)
 MAX_DEPSDEV_EVENTS = env_int("MAX_DEPSDEV_EVENTS", 40)
 MAX_OSV_EVENTS = env_int("MAX_OSV_EVENTS", 60)
@@ -130,11 +125,7 @@ DEPSDEV_REFRESH_EVERY = env_int("DEPSDEV_REFRESH_EVERY", 3, min_value=1, max_val
 OSV_REFRESH_EVERY = env_int("OSV_REFRESH_EVERY", 2, min_value=1, max_value=48)
 CISA_REFRESH_EVERY = env_int("CISA_REFRESH_EVERY", 3, min_value=1, max_value=48)
 URLSCAN_REFRESH_EVERY = env_int("URLSCAN_REFRESH_EVERY", 4, min_value=1, max_value=96)
-SHODAN_REFRESH_EVERY = env_int("SHODAN_REFRESH_EVERY", 8, min_value=1, max_value=96)
-CENSYS_REFRESH_EVERY = env_int("CENSYS_REFRESH_EVERY", 8, min_value=1, max_value=96)
 URLSCAN_DAILY_REQUEST_LIMIT = env_int("URLSCAN_DAILY_REQUEST_LIMIT", 120, min_value=1, max_value=5000)
-SHODAN_DAILY_REQUEST_LIMIT = env_int("SHODAN_DAILY_REQUEST_LIMIT", 40, min_value=1, max_value=2000)
-CENSYS_DAILY_REQUEST_LIMIT = env_int("CENSYS_DAILY_REQUEST_LIMIT", 40, min_value=1, max_value=2000)
 
 state: dict[str, Any] = {
     "last_fetch": 0.0,
@@ -157,10 +148,6 @@ OSV_BUDGET_PATH = Path(__file__).resolve().parent / ".osv_budget.json"
 OSV_BUDGET_STATE: dict[str, Any] = {"day": "", "used": 0}
 URLSCAN_BUDGET_PATH = Path(__file__).resolve().parent / ".urlscan_budget.json"
 URLSCAN_BUDGET_STATE: dict[str, Any] = {"day": "", "used": 0}
-SHODAN_BUDGET_PATH = Path(__file__).resolve().parent / ".shodan_budget.json"
-SHODAN_BUDGET_STATE: dict[str, Any] = {"day": "", "used": 0}
-CENSYS_BUDGET_PATH = Path(__file__).resolve().parent / ".censys_budget.json"
-CENSYS_BUDGET_STATE: dict[str, Any] = {"day": "", "used": 0}
 HISTORICAL_DATA_PATH = Path(__file__).resolve().parents[1] / "data" / "historical-threats.json"
 
 # Country centroids for approximate geolocation by country (not exact incident point).
@@ -447,92 +434,12 @@ def reserve_urlscan_request() -> bool:
     return True
 
 
-def load_shodan_budget() -> None:
-    global SHODAN_BUDGET_STATE
-    try:
-        if SHODAN_BUDGET_PATH.exists():
-            raw = json.loads(SHODAN_BUDGET_PATH.read_text(encoding="utf-8"))
-            if isinstance(raw, dict):
-                SHODAN_BUDGET_STATE = {"day": str(raw.get("day") or ""), "used": int(raw.get("used") or 0)}
-    except Exception:
-        SHODAN_BUDGET_STATE = {"day": "", "used": 0}
-
-
-def save_shodan_budget() -> None:
-    try:
-        SHODAN_BUDGET_PATH.write_text(json.dumps(SHODAN_BUDGET_STATE), encoding="utf-8")
-    except Exception:
-        return
-
-
-def reserve_shodan_request() -> bool:
-    if SHODAN_DAILY_REQUEST_LIMIT <= 0:
-        return True
-    today = utc_day_key()
-    day = str(SHODAN_BUDGET_STATE.get("day") or "")
-    used = int(SHODAN_BUDGET_STATE.get("used") or 0)
-    if day != today:
-        day = today
-        used = 0
-    if used >= SHODAN_DAILY_REQUEST_LIMIT:
-        SHODAN_BUDGET_STATE["day"] = day
-        SHODAN_BUDGET_STATE["used"] = used
-        save_shodan_budget()
-        return False
-    used += 1
-    SHODAN_BUDGET_STATE["day"] = day
-    SHODAN_BUDGET_STATE["used"] = used
-    save_shodan_budget()
-    return True
-
-
-def load_censys_budget() -> None:
-    global CENSYS_BUDGET_STATE
-    try:
-        if CENSYS_BUDGET_PATH.exists():
-            raw = json.loads(CENSYS_BUDGET_PATH.read_text(encoding="utf-8"))
-            if isinstance(raw, dict):
-                CENSYS_BUDGET_STATE = {"day": str(raw.get("day") or ""), "used": int(raw.get("used") or 0)}
-    except Exception:
-        CENSYS_BUDGET_STATE = {"day": "", "used": 0}
-
-
-def save_censys_budget() -> None:
-    try:
-        CENSYS_BUDGET_PATH.write_text(json.dumps(CENSYS_BUDGET_STATE), encoding="utf-8")
-    except Exception:
-        return
-
-
-def reserve_censys_request() -> bool:
-    if CENSYS_DAILY_REQUEST_LIMIT <= 0:
-        return True
-    today = utc_day_key()
-    day = str(CENSYS_BUDGET_STATE.get("day") or "")
-    used = int(CENSYS_BUDGET_STATE.get("used") or 0)
-    if day != today:
-        day = today
-        used = 0
-    if used >= CENSYS_DAILY_REQUEST_LIMIT:
-        CENSYS_BUDGET_STATE["day"] = day
-        CENSYS_BUDGET_STATE["used"] = used
-        save_censys_budget()
-        return False
-    used += 1
-    CENSYS_BUDGET_STATE["day"] = day
-    CENSYS_BUDGET_STATE["used"] = used
-    save_censys_budget()
-    return True
-
-
 load_pulsedive_budget()
 load_abuseipdb_budget()
 load_abusech_budget()
 load_depsdev_budget()
 load_osv_budget()
 load_urlscan_budget()
-load_shodan_budget()
-load_censys_budget()
 
 
 async def fetch_kev(client: httpx.AsyncClient) -> list[dict[str, Any]]:
@@ -1746,111 +1653,6 @@ async def fetch_urlscan_recent(client: httpx.AsyncClient) -> list[dict[str, Any]
                 "confidence": 0.68,
                 "assetCriticality": 3,
                 "hoursAgo": hours_since_iso8601(seen, fallback=12),
-                "kev": 0,
-                "epss": 0.0,
-            }
-        )
-    return out
-
-
-async def fetch_shodan_activity(client: httpx.AsyncClient) -> list[dict[str, Any]]:
-    if not SHODAN_API_KEY:
-        return []
-    # Keep query/rows small on free plan to avoid exhausting credits.
-    url = "https://api.shodan.io/shodan/host/search"
-    params = {"key": SHODAN_API_KEY, "query": "product:rdp OR product:ssh OR tag:ics", "page": 1}
-    try:
-        data = (await client.get(url, params=params, timeout=25)).json()
-    except Exception:
-        return []
-    rows = data.get("matches") if isinstance(data, dict) else None
-    if not isinstance(rows, list):
-        return []
-    out: list[dict[str, Any]] = []
-    for i, r in enumerate(rows[:MAX_SHODAN_ROWS]):
-        if not isinstance(r, dict):
-            continue
-        loc = r.get("location") if isinstance(r.get("location"), dict) else {}
-        lat = loc.get("latitude")
-        lon = loc.get("longitude")
-        cc = country_code_from_value(loc.get("country_code") or loc.get("country_name"))
-        if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
-            if not cc or cc not in COUNTRY_CENTROIDS:
-                continue
-            lat, lon = COUNTRY_CENTROIDS[cc]
-        if not cc:
-            cc = "UNK"
-        ts = r.get("timestamp")
-        port = r.get("port")
-        org = r.get("org") or r.get("isp") or "shodan-host"
-        out.append(
-            {
-                "id": f"shodan-{i}-{r.get('ip_str') or org}",
-                "country": cc,
-                "lat": lat,
-                "lon": lon,
-                "type": f"Shodan exposed service {port or ''}".strip(),
-                "attackKind": "web/api exploitation",
-                "source": "shodan",
-                "ip": r.get("ip_str"),
-                "ioc": org,
-                "firstSeen": ts,
-                "locationQuality": "host-geolocated (approximate)",
-                "confidence": 0.62,
-                "assetCriticality": 3,
-                "hoursAgo": hours_since_iso8601(ts, fallback=18),
-                "kev": 0,
-                "epss": 0.0,
-            }
-        )
-    return out
-
-
-async def fetch_censys_activity(client: httpx.AsyncClient) -> list[dict[str, Any]]:
-    if not CENSYS_API_ID or not CENSYS_API_SECRET:
-        return []
-    url = "https://search.censys.io/api/v2/hosts/search"
-    payload = {"q": "services.service_name: HTTP", "per_page": MAX_CENSYS_ROWS}
-    try:
-        res = await client.post(url, json=payload, auth=(CENSYS_API_ID, CENSYS_API_SECRET), timeout=25)
-        data = res.json()
-    except Exception:
-        return []
-    block = data.get("result") if isinstance(data, dict) else None
-    rows = block.get("hits") if isinstance(block, dict) else None
-    if not isinstance(rows, list):
-        return []
-    out: list[dict[str, Any]] = []
-    for i, r in enumerate(rows[:MAX_CENSYS_ROWS]):
-        if not isinstance(r, dict):
-            continue
-        loc = r.get("location") if isinstance(r.get("location"), dict) else {}
-        cc = country_code_from_value(loc.get("country_code") or loc.get("country"))
-        lat = loc.get("latitude")
-        lon = loc.get("longitude")
-        if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
-            if not cc or cc not in COUNTRY_CENTROIDS:
-                continue
-            lat, lon = COUNTRY_CENTROIDS[cc]
-        if not cc:
-            cc = "UNK"
-        ip = r.get("ip")
-        out.append(
-            {
-                "id": f"censys-{i}-{ip or 'host'}",
-                "country": cc,
-                "lat": lat,
-                "lon": lon,
-                "type": "Censys exposed host telemetry",
-                "attackKind": "web/api exploitation",
-                "source": "censys",
-                "ip": ip,
-                "ioc": ip or "censys-host",
-                "firstSeen": None,
-                "locationQuality": "host-geolocated (approximate)",
-                "confidence": 0.6,
-                "assetCriticality": 3,
-                "hoursAgo": 24,
                 "kev": 0,
                 "epss": 0.0,
             }

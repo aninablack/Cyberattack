@@ -43,9 +43,6 @@ Add optional API secrets in GitHub:
 - `PULSEDIVE_API_KEY`
 - `CF_API_TOKEN`
 - `URLSCAN_API_KEY`
-- `SHODAN_API_KEY`
-- `CENSYS_API_ID`
-- `CENSYS_API_SECRET`
 
 Path in GitHub:
 - `Settings` -> `Secrets and variables` -> `Actions` -> `New repository secret`
