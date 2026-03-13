@@ -2761,8 +2761,6 @@ async def build_live_events(
         "ddos_telemetry": "error",
         "cisa_alerts": "error",
         "urlscan": "error",
-        "shodan": "skipped:no-key",
-        "censys": "skipped:no-key",
         "abuseipdb": "skipped:no-key",
         "context": "off",
     }
@@ -2809,12 +2807,6 @@ async def build_live_events(
             if name == "urlscan" and not reserve_urlscan_request():
                 sources[name] = "skipped:daily-limit"
                 return []
-            if name == "shodan" and not reserve_shodan_request():
-                sources[name] = "skipped:daily-limit"
-                return []
-            if name == "censys" and not reserve_censys_request():
-                sources[name] = "skipped:daily-limit"
-                return []
             try:
                 rows = await fn(client)
                 sources[name] = f"ok:{len(rows)}"
@@ -2858,8 +2850,6 @@ async def build_live_events(
             run_feed("ddos_telemetry", fetch_ddos_country_telemetry),
             run_feed("cisa_alerts", fetch_cisa_alerts, cadence_every=CISA_REFRESH_EVERY),
             run_feed("urlscan", fetch_urlscan_recent, cadence_every=URLSCAN_REFRESH_EVERY),
-            run_feed("shodan", fetch_shodan_activity, no_key=not bool(SHODAN_API_KEY), cadence_every=SHODAN_REFRESH_EVERY),
-            run_feed("censys", fetch_censys_activity, no_key=not (bool(CENSYS_API_ID) and bool(CENSYS_API_SECRET)), cadence_every=CENSYS_REFRESH_EVERY),
         )
         (
             tf,
@@ -2884,13 +2874,11 @@ async def build_live_events(
             ddos_telemetry,
             cisa_alerts,
             urlscan,
-            shodan,
-            censys,
         ) = feed_tasks
 
         pulsedive_geo = [e for e in pulsedive if isinstance(e.get("lat"), (int, float)) and isinstance(e.get("lon"), (int, float))]
         pulsedive_alert_only = [e for e in pulsedive if not (isinstance(e.get("lat"), (int, float)) and isinstance(e.get("lon"), (int, float)))]
-        live_geo = tf + feodo + spamhaus_drop + firehol_level1 + emergingthreats + greensnow + bruteforceblocker + urlhaus + otx + pulsedive_geo + ransomware_live + ddos_telemetry + urlscan + shodan + censys
+        live_geo = tf + feodo + spamhaus_drop + firehol_level1 + emergingthreats + greensnow + bruteforceblocker + urlhaus + otx + pulsedive_geo + ransomware_live + ddos_telemetry + urlscan
         # IP reputation enrichment should run while client is active.
         live_geo, rep_status = await enrich_ip_reputation(
             client,

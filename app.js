@@ -45,8 +45,6 @@ const sourceCatalog = [
   { name: "Pulsedive API", type: "IOC stream with tags/types", url: "https://pulsedive.com/api/" },
   { name: "CIRCL CVE API", type: "Recent vulnerability advisory feed", url: "https://cve.circl.lu/" },
   { name: "urlscan.io API", type: "Suspicious/malicious web scan telemetry", url: "https://urlscan.io/docs/api/" },
-  { name: "Shodan API", type: "Internet-exposed host/service telemetry", url: "https://developer.shodan.io/api" },
-  { name: "Censys Search API", type: "Exposed host telemetry and internet surface data", url: "https://docs.censys.com/docs/platform-search-api" },
   { name: "CISA Advisories XML", type: "Live advisory intelligence feed", url: "https://www.cisa.gov/cybersecurity-advisories" },
   { name: "ransomware.live API", type: "Ransomware victim post telemetry by country", url: "https://ransomware.live/" },
   { name: "Cloudflare Radar", type: "Country-level DDoS telemetry", url: "https://radar.cloudflare.com/" },
