@@ -112,6 +112,7 @@ MAX_SPAMHAUS_CIDRS = env_int("MAX_SPAMHAUS_CIDRS", 120)
 MAX_FIREHOL_IPS = env_int("MAX_FIREHOL_IPS", 140)
 MAX_EMERGINGTHREATS_IPS = env_int("MAX_EMERGINGTHREATS_IPS", 120)
 MAX_GREENSNOW_IPS = env_int("MAX_GREENSNOW_IPS", 120)
+MAX_BRUTEFORCEBLOCKER_IPS = env_int("MAX_BRUTEFORCEBLOCKER_IPS", 120)
 MAX_REPUTATION_IP_EVENTS = env_int("MAX_REPUTATION_IP_EVENTS", 80)
 MAX_KEV_EVENTS = env_int("MAX_KEV_EVENTS", 120)
 MAX_TOTAL_EVENTS = env_int("MAX_TOTAL_EVENTS", 500)
@@ -2494,6 +2495,72 @@ async def fetch_greensnow_blacklist(client: httpx.AsyncClient) -> list[dict[str,
     return out
 
 
+async def fetch_bruteforceblocker(client: httpx.AsyncClient) -> list[dict[str, Any]]:
+    # BruteForceBlocker publishes attacking IPs (free, no key).
+    endpoint_candidates = [
+        "https://danger.rulez.sk/projects/bruteforceblocker/blist.php",
+        "http://danger.rulez.sk/projects/bruteforceblocker/blist.php",
+    ]
+    text = ""
+    for url in endpoint_candidates:
+        try:
+            resp = await client.get(url, timeout=25)
+            if resp.status_code >= 400:
+                continue
+            text = resp.text or ""
+            if text:
+                break
+        except Exception:
+            continue
+    if not text:
+        return []
+
+    ips: list[str] = []
+    for line in text.splitlines():
+        raw = line.strip()
+        if not raw or raw.startswith("#"):
+            continue
+        token = raw.split()[0].strip()
+        if is_ipv4(token):
+            ips.append(token)
+        if len(ips) >= MAX_BRUTEFORCEBLOCKER_IPS:
+            break
+    if not ips:
+        return []
+
+    unique_ips = sorted(set(ips))[:MAX_BRUTEFORCEBLOCKER_IPS]
+    geo = await geolocate_ips_ip_api(client, unique_ips)
+    out: list[dict[str, Any]] = []
+    for ip in unique_ips:
+        g = geo.get(ip)
+        if not g:
+            continue
+        out.append(
+            {
+                "id": f"bruteforceblocker-{ip}",
+                "country": g.get("country", "UNK"),
+                "lat": g.get("lat"),
+                "lon": g.get("lon"),
+                "type": "BruteForceBlocker attacking IP",
+                "attackKind": "credential theft",
+                "source": "bruteforceblocker+ip-api",
+                "ip": ip,
+                "ioc": ip,
+                "firstSeen": None,
+                "locationQuality": "ip-geolocated (approximate)",
+                "confidence": 0.78,
+                "assetCriticality": 3,
+                "hoursAgo": 4,
+                "kev": 0,
+                "epss": 0.0,
+                "attackTactic": "Credential Access",
+                "attackTechniqueId": "T1110",
+                "attackTechniqueName": "Brute Force",
+            }
+        )
+    return out
+
+
 def build_context_events(limit: int = 40) -> list[dict[str, Any]]:
     # Fallback for sparse live feeds: blend labeled context points from local historical OSINT.
     try:
@@ -2652,6 +2719,7 @@ async def build_live_events(
         "firehol_level1": "error",
         "emergingthreats": "error",
         "greensnow": "error",
+        "bruteforceblocker": "error",
         "openphish": "error",
         "phishing_army": "error",
         "phishing_database": "error",
@@ -2748,6 +2816,7 @@ async def build_live_events(
             run_feed("firehol_level1", fetch_firehol_level1),
             run_feed("emergingthreats", fetch_emergingthreats_compromised),
             run_feed("greensnow", fetch_greensnow_blacklist),
+            run_feed("bruteforceblocker", fetch_bruteforceblocker),
             run_feed("openphish", fetch_openphish),
             run_feed("phishing_army", fetch_phishing_army),
             run_feed("phishing_database", fetch_phishing_database),
@@ -2773,6 +2842,7 @@ async def build_live_events(
             firehol_level1,
             emergingthreats,
             greensnow,
+            bruteforceblocker,
             openphish,
             phishing_army,
             phishing_database,
@@ -2794,7 +2864,7 @@ async def build_live_events(
 
         pulsedive_geo = [e for e in pulsedive if isinstance(e.get("lat"), (int, float)) and isinstance(e.get("lon"), (int, float))]
         pulsedive_alert_only = [e for e in pulsedive if not (isinstance(e.get("lat"), (int, float)) and isinstance(e.get("lon"), (int, float)))]
-        live_geo = tf + feodo + spamhaus_drop + firehol_level1 + emergingthreats + greensnow + urlhaus + otx + pulsedive_geo + ransomware_live + ddos_telemetry + urlscan + shodan + censys
+        live_geo = tf + feodo + spamhaus_drop + firehol_level1 + emergingthreats + greensnow + bruteforceblocker + urlhaus + otx + pulsedive_geo + ransomware_live + ddos_telemetry + urlscan + shodan + censys
         # IP reputation enrichment should run while client is active.
         live_geo, rep_status = await enrich_ip_reputation(
             client,
