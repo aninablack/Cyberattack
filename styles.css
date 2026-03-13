@@ -1813,39 +1813,44 @@ button {
   .topbar {
     flex-direction: column;
     align-items: stretch;
-    gap: 10px;
-    padding: 16px 14px;
+    gap: 8px;
+    padding: 14px 12px;
   }
   .topbar h1 {
-    font-size: 0.85rem;
-    line-height: 1.25;
-    margin-bottom: 4px;
+    font-size: 0.78rem;
+    line-height: 1.2;
+    margin-bottom: 2px;
   }
   .topbar p {
-    font-size: 0.7rem;
-    line-height: 1.3;
+    font-size: 0.66rem;
+    line-height: 1.25;
   }
   .top-right {
     width: 100%;
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
+    grid-template-columns: auto 1fr;
+    gap: 6px;
     align-items: center;
   }
   .live-badge,
   .badge {
-    font-size: 0.68rem;
-    padding: 6px 8px;
+    font-size: 0.64rem;
+    padding: 5px 7px;
     justify-self: start;
+  }
+  .badge {
+    justify-self: end;
   }
   #lastSyncBadge {
     grid-column: 1 / -1;
     justify-self: start;
+    margin-top: 2px;
   }
   .feed-status-util {
     grid-column: 1 / -1;
     width: 100%;
     display: block;
+    margin-top: 2px;
   }
   #feedStatusToggle {
     display: none;
@@ -1856,7 +1861,7 @@ button {
   .feed-inline-chips {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 5px;
     justify-content: flex-start;
     align-content: start;
     max-height: none;
@@ -1865,20 +1870,41 @@ button {
     margin-top: 0;
   }
   .feed-mini-chip {
-    font-size: 0.64rem;
-    padding: 4px 7px;
+    font-size: 0.6rem;
+    padding: 3px 6px;
   }
   .panel-head {
     flex-direction: column;
     align-items: flex-start;
-    gap: 8px;
+    gap: 6px;
   }
   .map-head-actions {
     width: 100%;
     justify-content: space-between;
+    align-items: center;
   }
   #mapCount.sub {
-    font-size: 0.76rem;
+    font-size: 0.72rem;
+  }
+  .map-log-toggle {
+    font-size: 0.72rem;
+    padding: 6px 10px;
+  }
+  #selectedHotspot.meta {
+    font-size: 0.74rem;
+    margin-top: 4px;
+  }
+  #currentOps {
+    gap: 4px;
+    margin-top: 6px;
+  }
+  .obs-chip {
+    font-size: 0.66rem;
+    padding: 3px 7px;
+  }
+  #worldMap {
+    height: 440px;
+    margin-top: 8px;
   }
   .grid { grid-template-columns: 1fr; }
   .span-2 { grid-column: span 1; }
@@ -1892,23 +1918,6 @@ button {
   .priority-strip { grid-template-columns: 1fr; }
   .glossary-grid { grid-template-columns: 1fr; }
   .feed-status-grid { grid-template-columns: 1fr; }
-  .feed-status-util #feedStatusWrap {
-    position: fixed;
-    top: 72px;
-    left: 12px;
-    right: 12px;
-    min-width: 0;
-    max-width: none;
-    max-height: 72vh;
-    overflow: auto;
-    z-index: 2200;
-  }
-  .feed-inline-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    justify-content: flex-end;
-  }
   .report-kpi-grid { grid-template-columns: 1fr 1fr; }
   .tl-strip { grid-template-columns: 1fr 1fr; }
   .tl-strip-2,
@@ -1928,6 +1937,6 @@ button {
   .ns-bottom-grid { grid-template-columns: 1fr; }
   .ns-infra-cards { grid-template-columns: 1fr; }
   .trend-grid { grid-template-columns: 1fr 1fr; }
-  #currentOps { gap: 5px; }
-  .obs-chip { font-size: 0.7rem; }
+  #currentOps { gap: 4px; }
+  .obs-chip { font-size: 0.66rem; }
 }

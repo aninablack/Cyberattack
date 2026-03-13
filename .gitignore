@@ -9,3 +9,5 @@ backend/.osv_budget.json
 backend/.urlscan_budget.json
 backend/.shodan_budget.json
 backend/.censys_budget.json
+__pycache__/
+*.pyc

@@ -1931,8 +1931,10 @@ async def fetch_ddos_country_telemetry(client: httpx.AsyncClient) -> list[dict[s
     if not rows:
         if saw_quota:
             raise RuntimeError("quota")
+        # Treat client-side upstream blocks/shape changes as empty telemetry,
+        # not hard feed failure, to avoid noisy red status in snapshots.
         if saw_client_error:
-            raise RuntimeError("client_error")
+            return []
         return []
 
     out: list[dict[str, Any]] = []
