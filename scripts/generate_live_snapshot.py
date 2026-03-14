@@ -17,6 +17,7 @@ from backend.main import live_threats  # noqa: E402
 
 
 OUT_PATH = ROOT / "data" / "live-threats.json"
+LAST_GOOD_PATH = ROOT / "data" / "live-threats.last-good.json"
 
 
 def env_int(name: str, default: int) -> int:
@@ -101,12 +102,30 @@ def snapshot_is_healthy(payload: dict) -> tuple[bool, str]:
 async def main() -> None:
     payload = await live_threats(force_refresh=True)
     healthy, reason = snapshot_is_healthy(payload)
+    now_iso = datetime.now(timezone.utc).isoformat()
     if not healthy:
+        # Fail-open using last known good snapshot so publishing never regresses to context-only output.
+        if LAST_GOOD_PATH.exists():
+            try:
+                backup = json.loads(LAST_GOOD_PATH.read_text(encoding="utf-8"))
+                if isinstance(backup, dict):
+                    backup["snapshot_generated_at"] = now_iso
+                    backup["snapshot_mode"] = "last_good_fallback"
+                    backup["snapshot_fallback_reason"] = reason
+                    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+                    OUT_PATH.write_text(json.dumps(backup, ensure_ascii=False), encoding="utf-8")
+                    print(f"Live snapshot unhealthy ({reason}); reused last good snapshot: {LAST_GOOD_PATH}")
+                    print(f"Wrote snapshot: {OUT_PATH} ({backup.get('count', 0)} events)")
+                    return
+            except Exception:
+                pass
         print(f"Snapshot rejected: {reason}", file=sys.stderr)
         sys.exit(3)
-    payload["snapshot_generated_at"] = datetime.now(timezone.utc).isoformat()
+    payload["snapshot_generated_at"] = now_iso
+    payload["snapshot_mode"] = "live"
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    LAST_GOOD_PATH.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     print(f"Wrote snapshot: {OUT_PATH} ({payload.get('count', 0)} events)")
 
 
