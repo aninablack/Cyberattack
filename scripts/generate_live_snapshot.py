@@ -32,6 +32,8 @@ def env_int(name: str, default: int) -> int:
 def snapshot_is_healthy(payload: dict) -> tuple[bool, str]:
     count = int(payload.get("count") or 0)
     map_count = int(payload.get("map_count") or 0)
+    events = payload.get("events") if isinstance(payload.get("events"), list) else []
+    map_events = payload.get("map_events") if isinstance(payload.get("map_events"), list) else []
     source_health = payload.get("source_health") if isinstance(payload.get("source_health"), dict) else {}
     sources = payload.get("sources") if isinstance(payload.get("sources"), dict) else {}
 
@@ -66,10 +68,27 @@ def snapshot_is_healthy(payload: dict) -> tuple[bool, str]:
     min_count = env_int("MIN_SNAPSHOT_EVENT_COUNT", 60)
     min_map_count = env_int("MIN_SNAPSHOT_MAP_COUNT", 20)
     min_non_context_ok = env_int("MIN_SNAPSHOT_NON_CONTEXT_OK", 1)
+    min_non_context_events = env_int("MIN_SNAPSHOT_NON_CONTEXT_EVENTS", 30)
+    min_non_context_map_events = env_int("MIN_SNAPSHOT_NON_CONTEXT_MAP_EVENTS", 12)
     allow_context_only = os.getenv("ALLOW_CONTEXT_ONLY_SNAPSHOT", "").strip().lower() in {"1", "true", "yes", "on"}
+
+    non_context_events = [
+        e
+        for e in events
+        if isinstance(e, dict) and str(e.get("source") or "").strip().lower() != "historical-context"
+    ]
+    non_context_map_events = [
+        e
+        for e in map_events
+        if isinstance(e, dict) and str(e.get("source") or "").strip().lower() != "historical-context"
+    ]
 
     if allow_context_only:
         return True, "context-only override enabled"
+    if len(non_context_events) < min_non_context_events:
+        return False, f"non-context events too low ({len(non_context_events)} < {min_non_context_events})"
+    if len(non_context_map_events) < min_non_context_map_events:
+        return False, f"non-context map events too low ({len(non_context_map_events)} < {min_non_context_map_events})"
     if non_context_ok < min_non_context_ok:
         return False, f"non-context healthy feeds too low ({non_context_ok} < {min_non_context_ok})"
     if count < min_count:
