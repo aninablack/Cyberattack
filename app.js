@@ -265,6 +265,52 @@ function uniqueStrings(values = []) {
   return [...new Set(values.filter((v) => typeof v === "string" && v.trim().length))];
 }
 
+function hasFiniteCoords(e) {
+  return Number.isFinite(Number(e?.lat)) && Number.isFinite(Number(e?.lon));
+}
+
+function computeSourceHealthFromSources(sources = {}) {
+  const out = {};
+  Object.entries(sources || {}).forEach(([name, raw]) => {
+    const status = String(raw || "");
+    let reason = "ok";
+    let count = null;
+    if (status.startsWith("ok:")) {
+      const n = Number(status.split(":")[1]);
+      count = Number.isFinite(n) ? n : null;
+      if (count === 0) reason = "upstream_empty";
+    } else if (status.startsWith("skipped:no-key")) {
+      reason = "no_key";
+    } else if (status.startsWith("skipped:cooldown") || status.startsWith("skipped:daily-limit")) {
+      reason = "throttled";
+    } else if (status.startsWith("skipped:forbidden") || status.startsWith("skipped:degraded")) {
+      reason = "upstream_empty";
+    } else if (status.startsWith("on:")) {
+      reason = "fallback_on";
+      const n = Number(status.split(":")[1]);
+      count = Number.isFinite(n) ? n : null;
+    } else if (status === "off") {
+      reason = "fallback_off";
+    } else if (status.includes("quota") || status.includes("429") || status.includes("rate")) {
+      reason = "quota";
+    } else if (status && status !== "ok") {
+      reason = "error";
+    }
+    out[name] = { status, reason, count };
+  });
+  return out;
+}
+
+function normalizeIncomingSourceHealth(live = {}) {
+  if (live?.source_health && typeof live.source_health === "object" && Object.keys(live.source_health).length) {
+    return live.source_health;
+  }
+  if (live?.sources && typeof live.sources === "object" && Object.keys(live.sources).length) {
+    return computeSourceHealthFromSources(live.sources);
+  }
+  return {};
+}
+
 function drawMap(events) {
   const el = document.getElementById("worldMap");
   if (el._leaflet_id) {
@@ -1705,16 +1751,20 @@ async function init() {
       const live = await fetchFirstJson(snapshotEndpoints, timeoutMs);
       if (!live) throw new Error("live unavailable");
 
-      const events = live.events || [];
+      const events = Array.isArray(live.events) ? live.events : [];
       let mapEvents = live.map_events || [];
+      if (!mapEvents.length && events.length) {
+        mapEvents = events.filter((e) => hasFiniteCoords(e));
+      }
       if (!mapEvents.length) {
         const fallback = buildExpandedFallbackEvents(120);
         if (fallback.length) mapEvents = fallback;
       }
-      lastGood = { events, mapEvents, sourceHealth: live.source_health || {} };
+      const sourceHealth = normalizeIncomingSourceHealth(live);
+      lastGood = { events, mapEvents, sourceHealth };
       consecutiveFailures = 0;
       seenLive = true;
-      applyLiveData(events, mapEvents, lastGood.sourceHealth, "live");
+      applyLiveData(events, mapEvents, sourceHealth, "live");
       setLiveLoading(false);
     } catch {
       consecutiveFailures += 1;
