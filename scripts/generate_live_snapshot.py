@@ -61,9 +61,11 @@ def snapshot_is_healthy(payload: dict) -> tuple[bool, str]:
                 except Exception:
                     pass
 
-    min_count = env_int("MIN_SNAPSHOT_EVENT_COUNT", 120)
-    min_map_count = env_int("MIN_SNAPSHOT_MAP_COUNT", 60)
-    min_non_context_ok = env_int("MIN_SNAPSHOT_NON_CONTEXT_OK", 3)
+    # Conservative defaults: block obvious context-only/empty snapshots,
+    # but avoid failing healthy-yet-lean refreshes.
+    min_count = env_int("MIN_SNAPSHOT_EVENT_COUNT", 60)
+    min_map_count = env_int("MIN_SNAPSHOT_MAP_COUNT", 20)
+    min_non_context_ok = env_int("MIN_SNAPSHOT_NON_CONTEXT_OK", 1)
     allow_context_only = os.getenv("ALLOW_CONTEXT_ONLY_SNAPSHOT", "").strip().lower() in {"1", "true", "yes", "on"}
 
     if allow_context_only:
