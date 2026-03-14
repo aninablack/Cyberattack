@@ -1691,7 +1691,7 @@ async function init() {
   let lastGood = null;
   let seenLive = false;
   const FAILURE_GRACE = 3;
-  const REFRESH_MS = 180000;
+  const REFRESH_MS = 600000;
   const INITIAL_SLA_MS = 3000;
   const snapshotEndpoints = uniqueStrings(SNAPSHOT_ENDPOINTS);
 

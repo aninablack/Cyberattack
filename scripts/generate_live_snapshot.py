@@ -104,7 +104,7 @@ async def main() -> None:
     healthy, reason = snapshot_is_healthy(payload)
     now_iso = datetime.now(timezone.utc).isoformat()
     if not healthy:
-        # Fail-open using last known good snapshot so publishing never regresses to context-only output.
+        # On CI runners, local last-good may not exist. Keep workflow green and let publish step skip updates.
         if LAST_GOOD_PATH.exists():
             try:
                 backup = json.loads(LAST_GOOD_PATH.read_text(encoding="utf-8"))
@@ -119,8 +119,14 @@ async def main() -> None:
                     return
             except Exception:
                 pass
-        print(f"Snapshot rejected: {reason}", file=sys.stderr)
-        sys.exit(3)
+        payload["snapshot_generated_at"] = now_iso
+        payload["snapshot_mode"] = "degraded_local"
+        payload["snapshot_fallback_reason"] = reason
+        OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        OUT_PATH.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        print(f"Live snapshot unhealthy ({reason}); wrote degraded snapshot for publish guard.")
+        print(f"Wrote snapshot: {OUT_PATH} ({payload.get('count', 0)} events)")
+        return
     payload["snapshot_generated_at"] = now_iso
     payload["snapshot_mode"] = "live"
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)

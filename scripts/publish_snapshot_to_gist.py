@@ -31,6 +31,21 @@ def main() -> None:
         sys.exit(2)
 
     content = SNAPSHOT_PATH.read_text(encoding="utf-8")
+    try:
+        snapshot = json.loads(content)
+    except Exception as exc:
+        print(f"Snapshot JSON parse failed: {exc}", file=sys.stderr)
+        sys.exit(2)
+
+    mode = str(snapshot.get("snapshot_mode") or "").strip().lower()
+    count = int(snapshot.get("count") or 0)
+    map_count = int(snapshot.get("map_count") or 0)
+    reason = str(snapshot.get("snapshot_fallback_reason") or "").strip()
+    if mode.startswith("degraded"):
+        print(
+            f"Skipping gist publish: degraded snapshot mode='{mode}' reason='{reason}' count={count} map_count={map_count}"
+        )
+        return
     payload = {
         "description": "Cyber threat dashboard live snapshot (auto-updated)",
         "files": {gist_filename: {"content": content}},
