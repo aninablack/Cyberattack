@@ -158,7 +158,7 @@ let liveSourceHealth = {};
 const BALANCED_MAP_MODE = true;
 const THREAT_LOG_STORAGE_KEY = "threat_log_v1";
 const THREAT_LOG_MAX = 300;
-const LIVE_CACHE_STORAGE_KEY = "live_cache_v2";
+const LIVE_CACHE_STORAGE_KEY = "live_cache_v3";
 let threatLog = [];
 let liveLoadingTimeoutId = null;
 
@@ -1760,7 +1760,9 @@ async function init() {
     const c = new AbortController();
     const id = setTimeout(() => c.abort(), timeoutMs);
     try {
-      const res = await fetch(url, { signal: c.signal });
+      const requestUrl = new URL(url, window.location.href);
+      requestUrl.searchParams.set("_snapshot", String(Date.now()));
+      const res = await fetch(requestUrl, { signal: c.signal, cache: "no-store" });
       if (!res.ok) return null;
       return await res.json();
     } catch {
