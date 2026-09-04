@@ -310,6 +310,19 @@ function normalizeIncomingSourceHealth(live = {}) {
   return {};
 }
 
+let worldGeometryPromise = null;
+
+function loadWorldGeometry() {
+  if (!worldGeometryPromise) {
+    worldGeometryPromise = fetch("./data/world-countries.geojson", { cache: "force-cache" })
+      .then((response) => {
+        if (!response.ok) throw new Error(`Basemap geometry failed: ${response.status}`);
+        return response.json();
+      });
+  }
+  return worldGeometryPromise;
+}
+
 function drawMap(events) {
   const el = document.getElementById("worldMap");
   if (el._leaflet_id) {
@@ -318,12 +331,27 @@ function drawMap(events) {
 
   const map = L.map(el, {
     zoomControl: true,
-    zoomSnap: 0.25,
-    minZoom: 1.5,
-    maxBounds: [[-82, -190], [82, 190]],
-    maxBoundsViscosity: 1
-  }).setView([14, 0], 2.5);
+    preferCanvas: true,
+    zoomAnimation: false,
+    markerZoomAnimation: false,
+    fadeAnimation: false,
+    zoomSnap: 0.5,
+    zoomDelta: 0.5,
+    wheelDebounceTime: 25,
+    wheelPxPerZoomLevel: 90,
+    minZoom: 1,
+    maxBounds: [[-85, -180], [85, 180]],
+    maxBoundsViscosity: 0.75
+  });
   el._leaflet_map = map;
+  const worldViewBounds = L.latLngBounds([[-58, -168], [76, 168]]);
+  const fitWorld = () => {
+    if (el._leaflet_map !== map) return;
+    map.invalidateSize({ animate: false });
+    map.fitBounds(worldViewBounds, { padding: [14, 14], animate: false });
+  };
+  fitWorld();
+  requestAnimationFrame(fitWorld);
 
   map.createPane("mapGrid");
   map.getPane("mapGrid").style.zIndex = 180;
@@ -357,11 +385,7 @@ function drawMap(events) {
     Antarctica: "#122536"
   };
 
-  fetch("./data/world-countries.geojson")
-    .then((response) => {
-      if (!response.ok) throw new Error(`Basemap geometry failed: ${response.status}`);
-      return response.json();
-    })
+  loadWorldGeometry()
     .then((world) => {
       if (el._leaflet_map !== map) return;
       L.geoJSON(world, {
@@ -394,34 +418,51 @@ function drawMap(events) {
     }).addTo(map);
   });
 
-  const coordUse = new Map();
-  events.forEach((e) => {
+  const placementGroups = new Map();
+  events.forEach((event, eventIndex) => {
+    const point = map.project([Number(event.lat), Number(event.lon)], map.getZoom());
+    const cellKey = `${Math.round(point.x / 46)},${Math.round(point.y / 46)}`;
+    const group = placementGroups.get(cellKey) || [];
+    group.push({ event, eventIndex });
+    placementGroups.set(cellKey, group);
+  });
+  const markerOffsets = new Map();
+  placementGroups.forEach((group) => {
+    if (group.length === 1) {
+      markerOffsets.set(group[0].eventIndex, { x: 0, y: 0 });
+      return;
+    }
+    group.forEach(({ eventIndex }, slot) => {
+      const ring = Math.floor(slot / 8) + 1;
+      const angle = -Math.PI / 2 + ((slot % 8) * Math.PI * 2) / 8;
+      const radius = 25 * ring;
+      markerOffsets.set(eventIndex, {
+        x: Math.round(Math.cos(angle) * radius),
+        y: Math.round(Math.sin(angle) * radius)
+      });
+    });
+  });
+
+  events.forEach((e, eventIndex) => {
     const score = scoreAlert(e);
     const isLegacy = (e.timestamp || "").slice(0, 4) < "2021";
     const threatKey = normalizeThreatKey(e.attackKind || e.type, e.source);
     const color = THREAT_COLORS[threatKey] || THREAT_COLORS.unknown;
     const iconPath = THREAT_ICONS[threatKey] || THREAT_ICONS.unknown;
     const size = Math.round(20 + (score / 100) * 14);
+    const offset = markerOffsets.get(eventIndex) || { x: 0, y: 0 };
     const icon = L.divIcon({
       className: "threat-marker",
       iconSize: [size, size],
-      iconAnchor: [Math.round(size / 2), Math.round(size / 2)],
-      popupAnchor: [0, -Math.round(size / 2)],
+      iconAnchor: [Math.round(size / 2) - offset.x, Math.round(size / 2) - offset.y],
+      popupAnchor: [offset.x, offset.y - Math.round(size / 2)],
       html: `
         <div class="threat-pin ${isLegacy ? "legacy" : ""}" style="--threat-color:${color};width:${size}px;height:${size}px;">
           <img src="${iconPath}" alt="${threatKey}" loading="lazy" onerror="this.onerror=null;this.src='./assets/icons/unknown.svg';" />
         </div>
       `
     });
-    const key = `${Number(e.lat).toFixed(4)},${Number(e.lon).toFixed(4)}`;
-    const seen = coordUse.get(key) || 0;
-    coordUse.set(key, seen + 1);
-    // Prevent stacked markers at identical coordinates from hiding events.
-    const angle = seen * 0.8;
-    const radius = Math.min(1.4, 0.12 * seen);
-    const plotLat = Number(e.lat) + Math.sin(angle) * radius;
-    const plotLon = Number(e.lon) + Math.cos(angle) * radius;
-    const marker = L.marker([plotLat, plotLon], { icon }).addTo(map);
+    const marker = L.marker([Number(e.lat), Number(e.lon)], { icon, keyboard: true }).addTo(map);
 
     const seenRaw = e.firstSeen || e.timestamp || null;
     const seenIso = seenRaw ? new Date(seenRaw).toISOString() : null;
