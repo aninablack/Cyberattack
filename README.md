@@ -106,7 +106,7 @@ Supported caps in `backend/main.py`:
 - `MAX_RANSOMWARE_LIVE_ROWS` (default `120`)
 - `MAX_DDOS_TELEMETRY_ROWS` (default `120`)
 - `MAX_CISA_ALERT_ROWS` (default `80`)
-- `MAX_IP_GEO_INPUT` (default `20`)
+- `MAX_IP_GEO_INPUT` (default `60`, distributed across feeds in batches of five)
 - `MAX_FEODO_ROWS` (default `400`)
 - `MAX_SPAMHAUS_CIDRS` (default `300`)
 - `MAX_FIREHOL_IPS` (default `350`)

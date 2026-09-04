@@ -43,7 +43,7 @@ jobs:
           MAX_OSV_EVENTS: "60"
           MAX_RANSOMWARE_LIVE_ROWS: "70"
           MAX_CIRCL_ROWS: "40"
-          MAX_IP_GEO_INPUT: "20"
+          MAX_IP_GEO_INPUT: "60"
         run: python scripts/generate_live_snapshot.py
 
       - name: Commit live snapshot

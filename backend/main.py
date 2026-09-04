@@ -106,7 +106,7 @@ MAX_URLSCAN_ROWS = env_int("MAX_URLSCAN_ROWS", 40)
 MAX_MALWAREBAZAAR_ROWS = env_int("MAX_MALWAREBAZAAR_ROWS", 80)
 MAX_DEPSDEV_EVENTS = env_int("MAX_DEPSDEV_EVENTS", 40)
 MAX_OSV_EVENTS = env_int("MAX_OSV_EVENTS", 50)
-MAX_IP_GEO_INPUT = env_int("MAX_IP_GEO_INPUT", 20)
+MAX_IP_GEO_INPUT = env_int("MAX_IP_GEO_INPUT", 60)
 MAX_FEODO_ROWS = env_int("MAX_FEODO_ROWS", 400)
 MAX_SPAMHAUS_CIDRS = env_int("MAX_SPAMHAUS_CIDRS", 100)
 MAX_FIREHOL_IPS = env_int("MAX_FIREHOL_IPS", 100)
@@ -117,6 +117,8 @@ MAX_REPUTATION_IP_EVENTS = env_int("MAX_REPUTATION_IP_EVENTS", 80)
 MAX_KEV_EVENTS = env_int("MAX_KEV_EVENTS", 120)
 MAX_TOTAL_EVENTS = env_int("MAX_TOTAL_EVENTS", 500)
 MAX_CONTEXT_EVENTS = env_int("MAX_CONTEXT_EVENTS", 40)
+IP_GEO_CACHE: dict[str, dict[str, Any]] = {}
+IP_GEO_ATTEMPTED: set[str] = set()
 PULSEDIVE_DAILY_REQUEST_LIMIT = env_int("PULSEDIVE_DAILY_REQUEST_LIMIT", 45, min_value=1, max_value=5000)
 ABUSEIPDB_DAILY_CHECK_LIMIT = env_int("ABUSEIPDB_DAILY_CHECK_LIMIT", 900, min_value=1, max_value=5000)
 ABUSEIPDB_DAILY_HEADROOM = env_int("ABUSEIPDB_DAILY_HEADROOM", 200, min_value=0, max_value=2000)
@@ -763,7 +765,7 @@ async def fetch_openphish(client: httpx.AsyncClient) -> list[dict[str, Any]]:
                 "lon": g.get("lon") if g else None,
                 "type": "OpenPhish URL",
                 "attackKind": "phishing / social engineering",
-                "source": "openphish+dns+ip-api" if g else "openphish",
+                "source": "openphish+dns+ip-geolocation" if g else "openphish",
                 "ip": ip,
                 "ioc": u,
                 "firstSeen": None,
@@ -837,7 +839,7 @@ async def fetch_phishtank(client: httpx.AsyncClient) -> list[dict[str, Any]]:
                 "lon": g.get("lon") if g else None,
                 "type": f"PhishTank {target}",
                 "attackKind": "phishing / social engineering",
-                "source": "phishtank+dns+ip-api" if g else "phishtank",
+                "source": "phishtank+dns+ip-geolocation" if g else "phishtank",
                 "ip": ip,
                 "ioc": u,
                 "firstSeen": submitted or verified,
@@ -886,7 +888,7 @@ async def fetch_phishing_army(client: httpx.AsyncClient) -> list[dict[str, Any]]
                 "lon": g.get("lon") if g else None,
                 "type": "Phishing Army domain",
                 "attackKind": "phishing / social engineering",
-                "source": "phishing-army+dns+ip-api" if g else "phishing-army",
+                "source": "phishing-army+dns+ip-geolocation" if g else "phishing-army",
                 "ip": ip,
                 "ioc": domain,
                 "firstSeen": None,
@@ -950,7 +952,7 @@ async def fetch_phishing_database(client: httpx.AsyncClient) -> list[dict[str, A
                 "lon": g.get("lon") if g else None,
                 "type": "Phishing Database URL",
                 "attackKind": attack_kind,
-                "source": "phishing-database+dns+ip-api" if g else "phishing-database",
+                "source": "phishing-database+dns+ip-geolocation" if g else "phishing-database",
                 "ip": ip,
                 "ioc": u,
                 "firstSeen": None,
@@ -1064,7 +1066,7 @@ async def fetch_urlhaus(client: httpx.AsyncClient) -> list[dict[str, Any]]:
                 "lon": lon,
                 "type": str(family),
                 "attackKind": attack_kind,
-                "source": "urlhaus+dns+ip-api" if ip else "urlhaus",
+                "source": "urlhaus+dns+ip-geolocation" if ip else "urlhaus",
                 "ip": ip,
                 "ioc": r.get("url"),
                 "firstSeen": r.get("date_added"),
@@ -1418,7 +1420,7 @@ async def fetch_pulsedive(client: httpx.AsyncClient) -> list[dict[str, Any]]:
                     "lon": g.get("lon"),
                     "type": f"Pulsedive {threat}",
                     "attackKind": attack_kind,
-                    "source": "pulsedive+dns+ip-api",
+                    "source": "pulsedive+dns+ip-geolocation",
                     "ip": ip,
                     "ioc": ind,
                     "firstSeen": first_seen,
@@ -2048,27 +2050,50 @@ async def geolocate_ips_ip_api(client: httpx.AsyncClient, ips: list[str]) -> dic
     # intentionally small cap keeps the prototype within development quotas.
     if not ips:
         return {}
-    out: dict[str, dict[str, Any]] = {}
-    uniq = sorted(set(ips))[:MAX_IP_GEO_INPUT]
+    requested = sorted(set(ips))
+    out: dict[str, dict[str, Any]] = {
+        ip: IP_GEO_CACHE[ip] for ip in requested if ip in IP_GEO_CACHE
+    }
+    uniq: list[str] = []
+    for ip in requested:
+        if ip in IP_GEO_CACHE or ip in IP_GEO_ATTEMPTED:
+            continue
+        if len(IP_GEO_ATTEMPTED) >= MAX_IP_GEO_INPUT:
+            break
+        IP_GEO_ATTEMPTED.add(ip)
+        uniq.append(ip)
+        if len(uniq) >= 5:
+            break
     semaphore = asyncio.Semaphore(5)
 
     async def locate(ip: str) -> None:
-        url = f"https://ipapi.co/{ip}/json/"
+        data: dict[str, Any] = {}
         try:
             async with semaphore:
-                response = await client.get(url, timeout=15)
-            if response.status_code != 200:
-                return
-            data = response.json()
+                response = await client.get(f"https://ipapi.co/{ip}/json/", timeout=15)
+            if response.status_code == 200 and isinstance(response.json(), dict):
+                data = response.json()
         except Exception:
-            return
-        if not isinstance(data, dict) or data.get("error"):
-            return
-        lat = data.get("latitude")
-        lon = data.get("longitude")
-        cc = str(data.get("country_code") or "").upper()
+            data = {}
+
+        lat = data.get("latitude") if not data.get("error") else None
+        lon = data.get("longitude") if not data.get("error") else None
+        cc = str(data.get("country_code") or "").upper() if not data.get("error") else ""
+        if not (isinstance(lat, (int, float)) and isinstance(lon, (int, float))):
+            try:
+                async with semaphore:
+                    fallback = await client.get(f"https://ipwho.is/{ip}", timeout=15)
+                fallback_data = fallback.json() if fallback.status_code == 200 else {}
+            except Exception:
+                fallback_data = {}
+            if isinstance(fallback_data, dict) and fallback_data.get("success") is not False:
+                lat = fallback_data.get("latitude")
+                lon = fallback_data.get("longitude")
+                cc = str(fallback_data.get("country_code") or "").upper()
         if isinstance(lat, (int, float)) and isinstance(lon, (int, float)):
-            out[ip] = {"lat": lat, "lon": lon, "country": cc or "UNK"}
+            location = {"lat": lat, "lon": lon, "country": cc or "UNK"}
+            IP_GEO_CACHE[ip] = location
+            out[ip] = location
 
     await asyncio.gather(*(locate(ip) for ip in uniq))
     return out
