@@ -25,7 +25,6 @@ function updateTopBadges() {
 
 updateTopBadges();
 
-const MAPTILER_KEY = localStorage.getItem("MAPTILER_KEY") || "";
 const SNAPSHOT_ENDPOINTS = (() => {
   const fromWindow = (typeof window !== "undefined" && typeof window.CYBER_SNAPSHOT_URL === "string")
     ? window.CYBER_SNAPSHOT_URL.trim()
@@ -55,7 +54,7 @@ const sourceCatalog = [
   { name: "Pulsedive API", type: "IOC stream with tags/types", url: "https://pulsedive.com/api/" },
   { name: "CIRCL CVE API", type: "Recent vulnerability advisory feed", url: "https://cve.circl.lu/" },
   { name: "urlscan.io API", type: "Suspicious/malicious web scan telemetry", url: "https://urlscan.io/docs/api/" },
-  { name: "CISA Advisories XML", type: "Live advisory intelligence feed", url: "https://www.cisa.gov/cybersecurity-advisories" },
+  { name: "CISA CSAF Advisories", type: "Official machine-readable advisory feed", url: "https://github.com/cisagov/CSAF" },
   { name: "ransomware.live API", type: "Ransomware victim post telemetry by country", url: "https://ransomware.live/" },
   { name: "Cloudflare Radar", type: "Country-level DDoS telemetry", url: "https://radar.cloudflare.com/" },
   { name: "AbuseIPDB API", type: "Abusive IP reputation", url: "https://www.abuseipdb.com/api" }
@@ -159,7 +158,7 @@ let liveSourceHealth = {};
 const BALANCED_MAP_MODE = true;
 const THREAT_LOG_STORAGE_KEY = "threat_log_v1";
 const THREAT_LOG_MAX = 300;
-const LIVE_CACHE_STORAGE_KEY = "live_cache_v1";
+const LIVE_CACHE_STORAGE_KEY = "live_cache_v2";
 let threatLog = [];
 let liveLoadingTimeoutId = null;
 
@@ -317,21 +316,83 @@ function drawMap(events) {
     el._leaflet_map.remove();
   }
 
-  const map = L.map(el, { zoomControl: true }).setView([20, 0], 2);
+  const map = L.map(el, {
+    zoomControl: true,
+    zoomSnap: 0.25,
+    minZoom: 1.5,
+    maxBounds: [[-82, -190], [82, 190]],
+    maxBoundsViscosity: 1
+  }).setView([14, 0], 2.5);
   el._leaflet_map = map;
 
-  if (MAPTILER_KEY) {
-    L.tileLayer(`https://api.maptiler.com/maps/backdrop/{z}/{x}/{y}.png?key=${MAPTILER_KEY}`, {
-      maxZoom: 7,
-      attribution: '&copy; MapTiler &copy; OpenStreetMap contributors'
+  map.createPane("mapGrid");
+  map.getPane("mapGrid").style.zIndex = 180;
+  map.createPane("mapCountries");
+  map.getPane("mapCountries").style.zIndex = 200;
+  map.createPane("mapLabels");
+  map.getPane("mapLabels").style.zIndex = 220;
+
+  const gridStyle = {
+    pane: "mapGrid",
+    color: "#24455d",
+    weight: 0.6,
+    opacity: 0.34,
+    dashArray: "2 7",
+    interactive: false
+  };
+  [-60, -30, 0, 30, 60].forEach((lat) => {
+    L.polyline([[-180, lat], [180, lat]].map(([lon, y]) => [y, lon]), gridStyle).addTo(map);
+  });
+  [-120, -60, 0, 60, 120].forEach((lon) => {
+    L.polyline([[-78, lon], [78, lon]].map(([lat, x]) => [lat, x]), gridStyle).addTo(map);
+  });
+
+  const continentTone = {
+    Africa: "#183247",
+    Asia: "#162d40",
+    Europe: "#1b3549",
+    "North America": "#173044",
+    "South America": "#152b3d",
+    Oceania: "#183146",
+    Antarctica: "#122536"
+  };
+
+  fetch("./data/world-countries.geojson")
+    .then((response) => {
+      if (!response.ok) throw new Error(`Basemap geometry failed: ${response.status}`);
+      return response.json();
+    })
+    .then((world) => {
+      if (el._leaflet_map !== map) return;
+      L.geoJSON(world, {
+        pane: "mapCountries",
+        interactive: false,
+        style: (feature) => ({
+          fillColor: continentTone[feature?.properties?.CONTINENT] || "#172f43",
+          fillOpacity: 0.96,
+          color: "#2b5068",
+          opacity: 0.82,
+          weight: 0.65
+        })
+      }).addTo(map);
+      map.attributionControl.addAttribution('<a href="https://www.naturalearthdata.com/">Natural Earth</a>');
+    })
+    .catch((error) => console.warn(error));
+
+  [
+    [48, -105, "NORTH AMERICA"],
+    [-16, -61, "SOUTH AMERICA"],
+    [7, 20, "AFRICA"],
+    [51, 19, "EUROPE"],
+    [43, 91, "ASIA"],
+    [-27, 135, "OCEANIA"]
+  ].forEach(([lat, lon, label]) => {
+    L.marker([lat, lon], {
+      pane: "mapLabels",
+      interactive: false,
+      icon: L.divIcon({ className: "map-region-label", html: label })
     }).addTo(map);
-  } else {
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-      maxZoom: 7,
-      subdomains: "abcd",
-      attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
-    }).addTo(map);
-  }
+  });
 
   const coordUse = new Map();
   events.forEach((e) => {
@@ -368,6 +429,7 @@ function drawMap(events) {
     const attackKind = e.attackKind || e.type;
     const source = e.source || "unknown";
     const locationQuality = e.locationQuality || "unknown";
+    const signalType = e.signalType || "unclassified-signal";
     const confidencePct = Math.round((Number(e.confidence || 0) * 100));
     const ipText = e.ip || "n/a";
     const abuseScore = e.abuseipdb?.abuseConfidenceScore;
@@ -385,8 +447,9 @@ function drawMap(events) {
       IP: ${ipText}<br/>
       Timestamp: ${seenText}<br/>
       Period: ${isLegacy ? "Legacy baseline (2016-2020)" : "Core window (2021-2026/live)"}<br/>
-      Location: ${e.lat?.toFixed?.(4)}, ${e.lon?.toFixed?.(4)} (${locationQuality})<br/>
-      Threat family: ${e.type}<br/>
+      Approximate location: ${e.lat?.toFixed?.(4)}, ${e.lon?.toFixed?.(4)} (${locationQuality})<br/>
+      Signal class: ${signalType}<br/>
+      Indicator family: ${e.type}<br/>
       MITRE ATT&CK: ${mitreTactic} | ${mitreTechniqueId} ${mitreTechniqueName}<br/>
       AbuseIPDB: ${abuseScore ?? "n/a"}${abuseReports != null ? ` (reports ${abuseReports})` : ""}<br/>
       NVD: ${nvdCvss != null ? `CVSS ${nvdCvss}` : "n/a"}${nvdCwe ? `, ${nvdCwe}` : ""}<br/>
@@ -437,23 +500,25 @@ function safeLoadLiveCache() {
       events: Array.isArray(parsed.events) ? parsed.events : [],
       mapEvents: Array.isArray(parsed.mapEvents) ? parsed.mapEvents : [],
       sourceHealth: parsed.sourceHealth && typeof parsed.sourceHealth === "object" ? parsed.sourceHealth : {},
-      updatedAt: parsed.updatedAt || null
+      updatedAt: parsed.updatedAt || null,
+      snapshotGeneratedAt: parsed.snapshotGeneratedAt || null
     };
   } catch {
     return null;
   }
 }
 
-function saveLiveCache(events = [], mapEvents = [], sourceHealth = {}) {
+function saveLiveCache(events = [], mapEvents = [], sourceHealth = {}, snapshotGeneratedAt = null) {
   try {
     const payload = {
       events: Array.isArray(events) ? events.slice(0, 250) : [],
       mapEvents: Array.isArray(mapEvents) ? mapEvents.slice(0, 300) : [],
       sourceHealth: sourceHealth && typeof sourceHealth === "object" ? sourceHealth : {},
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      snapshotGeneratedAt
     };
     localStorage.setItem(LIVE_CACHE_STORAGE_KEY, JSON.stringify(payload));
-    lastSyncedAt = payload.updatedAt;
+    lastSyncedAt = payload.snapshotGeneratedAt || payload.updatedAt;
     updateTopBadges();
   } catch {
     return;
@@ -571,37 +636,9 @@ function buildBalancedDisplayEvents(events = []) {
 }
 
 function getMapModeEvents() {
-  const withCoords = Array.isArray(liveMapEvents) ? [...liveMapEvents] : [];
-  const seen = new Set(withCoords.map((e) => String(e.id || "")));
   const hasCoords = (e) => Number.isFinite(Number(e?.lat)) && Number.isFinite(Number(e?.lon));
-  const hubs = [
-    [37.09, -95.71],   // US
-    [51.16, 10.45],    // EU
-    [20.59, 78.96],    // IN
-    [1.35, 103.82],    // SG
-    [-14.23, -51.92],  // BR
-    [35.86, 104.19],   // CN
-    [-25.27, 133.77],  // AU
-    [55.37, -3.43]     // GB
-  ];
-  const alertOnly = (Array.isArray(liveAlertEvents) ? liveAlertEvents : []).filter((e) => !hasCoords(e));
-  const projectLimit = 260;
-  for (let i = 0; i < alertOnly.length && i < projectLimit; i += 1) {
-    const e = alertOnly[i];
-    if (seen.has(String(e.id || ""))) continue;
-    const hub = hubs[i % hubs.length];
-    const jitterLat = (((i % 9) - 4) * 0.28);
-    const jitterLon = ((((i * 3) % 9) - 4) * 0.28);
-    withCoords.push({
-      ...e,
-      lat: Number((hub[0] + jitterLat).toFixed(4)),
-      lon: Number((hub[1] + jitterLon).toFixed(4)),
-      locationQuality: "projected-from-alert (approximate)",
-      source: `${e.source || "live"}-projected`
-    });
-    seen.add(String(e.id || ""));
-  }
-  return buildBalancedDisplayEvents(withCoords);
+  const mapped = Array.isArray(liveMapEvents) ? liveMapEvents.filter(hasCoords) : [];
+  return buildBalancedDisplayEvents(mapped);
 }
 
 function getGlossaryEvents() {
@@ -611,7 +648,7 @@ function getGlossaryEvents() {
 function updateMapCount() {
   const el = document.getElementById("mapCount");
   if (!el) return;
-  el.textContent = `${allMapEvents.length} hotspots · ${liveAlertEvents.length} alerts`;
+  el.textContent = `${allMapEvents.length} mapped signals · ${liveAlertEvents.length} intelligence records`;
 }
 
 function updateHistoricalSourceNote() {
@@ -853,7 +890,7 @@ function renderFeedStatusPanel(sourceHealth = {}) {
 function setLiveBadge(mode) {
   const badge = document.getElementById("liveBadge");
   if (!badge) return;
-  badge.classList.remove("live", "offline", "degraded");
+  badge.classList.remove("live", "offline", "degraded", "stale");
   if (mode === "live") {
     badge.classList.add("live");
     badge.textContent = "LIVE";
@@ -862,6 +899,11 @@ function setLiveBadge(mode) {
   if (mode === "degraded") {
     badge.classList.add("degraded");
     badge.textContent = liveAlertEvents.length ? "LIVE • LOADING" : "LOADING";
+    return;
+  }
+  if (mode === "stale") {
+    badge.classList.add("stale");
+    badge.textContent = "STALE";
     return;
   }
   badge.classList.add("offline");
@@ -1693,7 +1735,26 @@ async function init() {
   const FAILURE_GRACE = 3;
   const REFRESH_MS = 600000;
   const INITIAL_SLA_MS = 3000;
+  const MAX_LIVE_AGE_MS = 45 * 60 * 1000;
   const snapshotEndpoints = uniqueStrings(SNAPSHOT_ENDPOINTS);
+
+  const snapshotGeneratedAt = (snapshot) => {
+    const raw = snapshot?.snapshot_generated_at ?? snapshot?.generated_at ?? null;
+    if (typeof raw === "number" && Number.isFinite(raw)) return new Date(raw * 1000).toISOString();
+    if (typeof raw === "string") {
+      const ms = Date.parse(raw);
+      if (Number.isFinite(ms)) return new Date(ms).toISOString();
+    }
+    return null;
+  };
+
+  const snapshotIsFresh = (snapshot, generatedAt) => {
+    if (!generatedAt) return false;
+    const mode = String(snapshot?.snapshot_mode || "").toLowerCase();
+    if (mode.startsWith("degraded") || mode.includes("fallback")) return false;
+    const age = Date.now() - Date.parse(generatedAt);
+    return Number.isFinite(age) && age >= -5 * 60 * 1000 && age <= MAX_LIVE_AGE_MS;
+  };
 
   const fetchJsonWithTimeout = async (url, timeoutMs = 5000) => {
     const c = new AbortController();
@@ -1717,7 +1778,7 @@ async function init() {
     return null;
   };
 
-  const applyLiveData = (events, mapEvents, sourceHealth, mode = "live") => {
+  const applyLiveData = (events, mapEvents, sourceHealth, mode = "live", generatedAt = null) => {
     liveAlertEvents = events || [];
     liveMapEvents = mapEvents || [];
     liveSourceHealth = sourceHealth || {};
@@ -1733,12 +1794,12 @@ async function init() {
     renderThreatLog();
     updateHistoricalSourceNote();
     updateMapCount();
-    if (mode === "live") {
-      lastSyncedAt = new Date().toISOString();
+    if (generatedAt) {
+      lastSyncedAt = generatedAt;
       updateTopBadges();
     }
     if (events.length || mapEvents.length) {
-      saveLiveCache(events, mapEvents, liveSourceHealth);
+      saveLiveCache(events, mapEvents, liveSourceHealth, generatedAt);
     }
   };
 
@@ -1756,25 +1817,22 @@ async function init() {
       if (!mapEvents.length && events.length) {
         mapEvents = events.filter((e) => hasFiniteCoords(e));
       }
-      if (!mapEvents.length) {
-        const fallback = buildExpandedFallbackEvents(120);
-        if (fallback.length) mapEvents = fallback;
-      }
       const sourceHealth = normalizeIncomingSourceHealth(live);
-      lastGood = { events, mapEvents, sourceHealth };
+      const generatedAt = snapshotGeneratedAt(live);
+      const mode = snapshotIsFresh(live, generatedAt) ? "live" : "stale";
+      lastGood = { events, mapEvents, sourceHealth, generatedAt, mode };
       consecutiveFailures = 0;
       seenLive = true;
-      applyLiveData(events, mapEvents, sourceHealth, "live");
+      applyLiveData(events, mapEvents, sourceHealth, mode, generatedAt);
       setLiveLoading(false);
     } catch {
       consecutiveFailures += 1;
       if (lastGood && consecutiveFailures < FAILURE_GRACE) {
-        applyLiveData(lastGood.events, lastGood.mapEvents, lastGood.sourceHealth, "degraded");
+        applyLiveData(lastGood.events, lastGood.mapEvents, lastGood.sourceHealth, "degraded", lastGood.generatedAt);
         if (!seenLive) setLiveLoading(true, "Syncing live feeds...");
       } else {
-        const fallback = buildExpandedFallbackEvents(120);
         const mode = "degraded";
-        applyLiveData(fallback, fallback, lastGood?.sourceHealth || {}, mode);
+        applyLiveData([], [], lastGood?.sourceHealth || {}, mode);
         if (!seenLive) setLiveLoading(true, "Syncing live feeds...");
       }
     } finally {
@@ -1784,17 +1842,16 @@ async function init() {
 
   const cached = safeLoadLiveCache();
   if (cached && (cached.events.length || cached.mapEvents.length)) {
-    lastSyncedAt = cached.updatedAt || lastSyncedAt;
+    lastSyncedAt = cached.snapshotGeneratedAt || cached.updatedAt || lastSyncedAt;
     updateTopBadges();
-    const mapEvents = cached.mapEvents.length ? cached.mapEvents : cached.events;
-    applyLiveData(cached.events, mapEvents, cached.sourceHealth || {}, "degraded");
+    const mapEvents = cached.mapEvents.length
+      ? cached.mapEvents
+      : cached.events.filter((event) => hasFiniteCoords(event));
+    applyLiveData(cached.events, mapEvents, cached.sourceHealth || {}, "degraded", cached.snapshotGeneratedAt);
     setLiveLoading(true, "Syncing live feeds...");
   } else {
-    const initialFallback = buildExpandedFallbackEvents(120);
-    if (initialFallback.length) {
-      applyLiveData(initialFallback, initialFallback, {}, "degraded");
-      setLiveLoading(true, "Syncing live feeds...");
-    }
+    applyLiveData([], [], {}, "degraded");
+    setLiveLoading(true, "Syncing live feeds...");
   }
 
   await refreshLiveData(true);

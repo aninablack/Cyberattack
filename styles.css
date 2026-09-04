@@ -63,6 +63,11 @@ body {
   background: rgba(255, 196, 71, 0.15);
   border-color: #a6762f;
 }
+.live-badge.stale {
+  color: #ffd99a;
+  background: rgba(255, 159, 28, 0.16);
+  border-color: #b56b1d;
+}
 .live-badge.offline {
   color: #ffb0b0;
   background: rgba(255, 91, 91, 0.15);
@@ -237,6 +242,28 @@ body {
 }
 #worldMap {
   height: 560px;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(24, 67, 91, 0.22), transparent 58%),
+    linear-gradient(180deg, #071522 0%, #050e17 100%);
+}
+#worldMap .leaflet-overlay-pane svg {
+  shape-rendering: geometricPrecision;
+}
+#worldMap .map-region-label {
+  width: max-content !important;
+  height: auto !important;
+  margin: 0 !important;
+  transform: translate(-50%, -50%);
+  border: 0;
+  background: transparent;
+  color: rgba(126, 166, 190, 0.48);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  line-height: 1;
+  text-shadow: 0 1px 8px #050e17;
+  white-space: nowrap;
 }
 #worldMap .leaflet-control-zoom a {
   background: #0a1724;

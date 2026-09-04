@@ -10,7 +10,7 @@ This dashboard provides:
 ## Run Frontend
 
 ```bash
-cd '/Users/aninablack/Documents/New project/cyber-threat-dashboard'
+cd /path/to/cyber-threat-dashboard
 python3 -m http.server 8080
 ```
 
@@ -29,22 +29,18 @@ Deploy this project root as a static site:
 This repo includes:
 - `.github/workflows/live-snapshot.yml`
 - `scripts/generate_live_snapshot.py`
-- `scripts/publish_snapshot_to_gist.py`
 
-The workflow runs on a schedule, generates a snapshot, and publishes it to a GitHub Gist.
-
-No always-on backend is required, and Netlify no longer needs to redeploy for each snapshot update.
+Every 30 minutes the workflow generates a validated snapshot and commits
+`data/live-threats.json` only when `snapshot_mode` is `live`. Netlify then deploys
+the updated static data file. Degraded refreshes leave the last published file unchanged.
 
 Add optional API secrets in GitHub:
 - `NVD_API_KEY`
 - `ABUSEIPDB_API_KEY`
 - `ABUSECH_API_KEY`
 - `OTX_API_KEY`
-- `PULSEDIVE_API_KEY`
 - `CF_API_TOKEN`
 - `URLSCAN_API_KEY`
-- `SNAPSHOT_GIST_ID` (the target Gist ID)
-- `SNAPSHOT_GIST_TOKEN` (PAT with `gist` scope)
 
 Path in GitHub:
 - `Settings` -> `Secrets and variables` -> `Actions` -> `New repository secret`
@@ -54,23 +50,14 @@ Path in GitHub:
 In GitHub:
 - `Actions` -> `Refresh Live Snapshot` -> `Run workflow`
 
-After it completes, open the workflow logs and copy the printed `Raw URL`.
-Then set either:
-- `window.CYBER_SNAPSHOT_URL = "RAW_URL"` before app load, or
-- `<meta name="cyber-snapshot-url" content="RAW_URL">` in `index.html`.
+After it completes, the dashboard reads the committed `./data/live-threats.json`.
+No separate snapshot URL or always-on backend is required.
 
-The app falls back to `./data/live-threats.json` if no remote URL is provided.
+## Map Basemap
 
-## Map Provider (MapTiler)
-
-The map uses MapTiler when a key is present, otherwise it falls back to CARTO dark tiles.
-
-Set your MapTiler key in browser localStorage:
-
-```js
-localStorage.setItem("MAPTILER_KEY", "YOUR_MAPTILER_KEY")
-location.reload()
-```
+The map uses local Natural Earth country geometry rendered as crisp Leaflet
+vectors. Its land, borders, grid, labels, and ocean are styled with the dashboard
+palette, with no map API key or external tile service required.
 
 ## Run Live Snapshot Locally (optional)
 
@@ -119,7 +106,7 @@ Supported caps in `backend/main.py`:
 - `MAX_RANSOMWARE_LIVE_ROWS` (default `120`)
 - `MAX_DDOS_TELEMETRY_ROWS` (default `120`)
 - `MAX_CISA_ALERT_ROWS` (default `80`)
-- `MAX_IP_GEO_INPUT` (default `500`)
+- `MAX_IP_GEO_INPUT` (default `20`)
 - `MAX_FEODO_ROWS` (default `400`)
 - `MAX_SPAMHAUS_CIDRS` (default `300`)
 - `MAX_FIREHOL_IPS` (default `350`)
@@ -130,10 +117,17 @@ Supported caps in `backend/main.py`:
 
 Optional API keys:
 - `OTX_API_KEY` for AlienVault OTX
-- `PULSEDIVE_API_KEY` for Pulsedive
+- `PULSEDIVE_API_KEY` for Pulsedive (disabled when unset; keep credentials out of request URLs and application logs)
 - `CF_API_TOKEN` for Cloudflare Radar API access (optional; improves ddos telemetry coverage)
 - `GREYNOISE_API_KEY` for GreyNoise enrichment
 - `ABUSEIPDB_API_KEY` for AbuseIPDB enrichment
+
+Snapshot integrity rules:
+
+- The browser labels a snapshot `LIVE` only when it is explicitly generated in live mode and is no more than 45 minutes old.
+- Stale, degraded, and last-good fallback snapshots are labeled accordingly and are never republished as fresh.
+- The live map includes only source-derived, IP-geolocated, or clearly labeled country-centroid coordinates. Historical context and synthetic regional projections are excluded.
+- Indicators without defensible coordinates remain in the alert stream with `locationClass: not-mapped`.
 
 ## Historical Map Mode
 

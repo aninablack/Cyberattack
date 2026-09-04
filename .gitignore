@@ -11,3 +11,4 @@ backend/.shodan_budget.json
 backend/.censys_budget.json
 __pycache__/
 *.pyc
+data/live-threats.last-good.json

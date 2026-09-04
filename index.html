@@ -3,7 +3,6 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="cyber-snapshot-url" content="https://gist.githubusercontent.com/aninablack/f858abac8ccc09e717e87cd55da003c0/raw/live-threats.json" />
     <title>Global Cyber Threat Intelligence Dashboard</title>
     <meta name="description" content="Live threat monitoring, global hotspots, and response intelligence." />
     <link rel="icon" type="image/svg+xml" href="./assets/favicon-botnet.svg" />
@@ -53,7 +52,7 @@
     <main class="grid">
       <section class="panel map-panel">
         <div class="panel-head">
-          <h2>Attack Hotspot Map</h2>
+          <h2>Threat Signal Map</h2>
           <div class="map-head-actions">
             <span id="mapCount" class="sub"></span>
             <div class="map-log-util">
@@ -68,10 +67,10 @@
           </div>
         </div>
         <div id="liveLoading" class="live-loading hidden">Loading live feeds...</div>
-        <div id="selectedHotspot" class="meta">Select a hotspot for detail.</div>
+        <div id="selectedHotspot" class="meta">Select a mapped threat signal for detail.</div>
         <div id="currentOps" class="meta"></div>
-        <div id="worldMap" aria-label="Attack hotspot map"></div>
-        <div class="meta">Near-real-time simulation + source integration ready</div>
+        <div id="worldMap" aria-label="Mapped threat intelligence signals"></div>
+        <div class="meta">Locations are source-derived, IP-geolocated, or country-centroid approximations. Synthetic regional projections are excluded.</div>
         <div id="historicalSource" class="meta"></div>
       </section>
 

@@ -67,7 +67,7 @@ def snapshot_is_healthy(payload: dict) -> tuple[bool, str]:
     # Conservative defaults: block obvious context-only/empty snapshots,
     # but avoid failing healthy-yet-lean refreshes.
     min_count = env_int("MIN_SNAPSHOT_EVENT_COUNT", 60)
-    min_map_count = env_int("MIN_SNAPSHOT_MAP_COUNT", 20)
+    min_map_count = env_int("MIN_SNAPSHOT_MAP_COUNT", 12)
     min_non_context_ok = env_int("MIN_SNAPSHOT_NON_CONTEXT_OK", 1)
     min_non_context_events = env_int("MIN_SNAPSHOT_NON_CONTEXT_EVENTS", 30)
     min_non_context_map_events = env_int("MIN_SNAPSHOT_NON_CONTEXT_MAP_EVENTS", 12)

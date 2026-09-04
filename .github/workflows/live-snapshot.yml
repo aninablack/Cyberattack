@@ -3,13 +3,11 @@ name: Refresh Live Snapshot
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/5 * * * *"
-
+    - cron: "*/30 * * * *"
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   refresh:
@@ -32,7 +30,6 @@ jobs:
           ABUSEIPDB_API_KEY: ${{ secrets.ABUSEIPDB_API_KEY }}
           ABUSECH_API_KEY: ${{ secrets.ABUSECH_API_KEY }}
           OTX_API_KEY: ${{ secrets.OTX_API_KEY }}
-          PULSEDIVE_API_KEY: ${{ secrets.PULSEDIVE_API_KEY }}
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           URLSCAN_API_KEY: ${{ secrets.URLSCAN_API_KEY }}
           MAX_TOTAL_EVENTS: "500"
@@ -46,11 +43,21 @@ jobs:
           MAX_OSV_EVENTS: "60"
           MAX_RANSOMWARE_LIVE_ROWS: "70"
           MAX_CIRCL_ROWS: "40"
+          MAX_IP_GEO_INPUT: "20"
         run: python scripts/generate_live_snapshot.py
 
-      - name: Publish snapshot to Gist
-        env:
-          GIST_ID: ${{ secrets.SNAPSHOT_GIST_ID }}
-          GIST_TOKEN: ${{ secrets.SNAPSHOT_GIST_TOKEN }}
-          GIST_FILENAME: "live-threats.json"
-        run: python scripts/publish_snapshot_to_gist.py
+      - name: Commit live snapshot
+        run: |
+          if ! jq -e '.snapshot_mode == "live"' data/live-threats.json >/dev/null; then
+            echo "Snapshot is degraded; leaving the published last-good file unchanged."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/live-threats.json
+          if git diff --cached --quiet; then
+            echo "Snapshot unchanged."
+            exit 0
+          fi
+          git commit -m "chore: refresh live snapshot"
+          git push

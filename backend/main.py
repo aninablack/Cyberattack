@@ -21,6 +21,11 @@ app = FastAPI(title="Cyber Threat Live API", version="0.1.0")
 logger = logging.getLogger("cyberdash.feeds")
 if not logger.handlers:
     logging.basicConfig(level=logging.INFO)
+# httpx includes full request URLs in INFO logs. Some providers require API
+# keys in query parameters, so suppress transport logs to prevent credential
+# disclosure while retaining our redacted, source-level diagnostics.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 app.add_middleware(
     CORSMiddleware,
@@ -101,7 +106,7 @@ MAX_URLSCAN_ROWS = env_int("MAX_URLSCAN_ROWS", 40)
 MAX_MALWAREBAZAAR_ROWS = env_int("MAX_MALWAREBAZAAR_ROWS", 80)
 MAX_DEPSDEV_EVENTS = env_int("MAX_DEPSDEV_EVENTS", 40)
 MAX_OSV_EVENTS = env_int("MAX_OSV_EVENTS", 50)
-MAX_IP_GEO_INPUT = env_int("MAX_IP_GEO_INPUT", 500)
+MAX_IP_GEO_INPUT = env_int("MAX_IP_GEO_INPUT", 20)
 MAX_FEODO_ROWS = env_int("MAX_FEODO_ROWS", 400)
 MAX_SPAMHAUS_CIDRS = env_int("MAX_SPAMHAUS_CIDRS", 100)
 MAX_FIREHOL_IPS = env_int("MAX_FIREHOL_IPS", 100)
@@ -642,11 +647,29 @@ async def fetch_threatfox(client: httpx.AsyncClient) -> list[dict[str, Any]]:
         ]
         for endpoint in fallback_urls:
             try:
-                data = (await client.get(endpoint, timeout=25)).json()
+                resp = await client.get(endpoint, timeout=25)
+                resp.raise_for_status()
+                data = resp.json()
             except Exception:
                 continue
             if isinstance(data, dict):
-                candidate = [r for r in data.get("data", [])[:MAX_THREATFOX_ROWS] if isinstance(r, dict)]
+                if isinstance(data.get("data"), list):
+                    candidate = [r for r in data.get("data", [])[:MAX_THREATFOX_ROWS] if isinstance(r, dict)]
+                else:
+                    # Current public export is keyed by IOC id and each value is
+                    # a one-element list.
+                    candidate = []
+                    for export_id, values in data.items():
+                        if not isinstance(values, list):
+                            continue
+                        for value in values:
+                            if not isinstance(value, dict):
+                                continue
+                            candidate.append({**value, "id": export_id})
+                            if len(candidate) >= MAX_THREATFOX_ROWS:
+                                break
+                        if len(candidate) >= MAX_THREATFOX_ROWS:
+                            break
             elif isinstance(data, list):
                 candidate = [r for r in data[:MAX_THREATFOX_ROWS] if isinstance(r, dict)]
             else:
@@ -656,8 +679,17 @@ async def fetch_threatfox(client: httpx.AsyncClient) -> list[dict[str, Any]]:
                 break
     if not rows:
         return []
+    for row in rows:
+        if not row.get("ioc") and row.get("ioc_value"):
+            row["ioc"] = row.get("ioc_value")
+        if not row.get("first_seen") and row.get("first_seen_utc"):
+            row["first_seen"] = row.get("first_seen_utc")
     ip_iocs = [r.get("ioc") for r in rows if is_ipv4(r.get("ioc"))]
+    domain_iocs = [str(r.get("ioc")).strip().lower() for r in rows if isinstance(r.get("ioc"), str) and not is_ipv4(r.get("ioc"))]
+    resolved_domains = await resolve_hosts_to_ipv4(domain_iocs)
     geo_by_ip = await geolocate_ips_ip_api(client, [ip for ip in ip_iocs if isinstance(ip, str)])
+    if resolved_domains:
+        geo_by_ip.update(await geolocate_ips_ip_api(client, list(resolved_domains.values())))
 
     out = []
     for ioc in rows:
@@ -666,10 +698,11 @@ async def fetch_threatfox(client: httpx.AsyncClient) -> list[dict[str, Any]]:
         lat = None
         lon = None
         country = cc or "UNK"
-        location_quality = "country-centroid (approximate)"
+        location_quality = "not-geolocated"
 
-        if is_ipv4(ioc_value) and ioc_value in geo_by_ip:
-            g = geo_by_ip[ioc_value]
+        geo_ip = ioc_value if is_ipv4(ioc_value) else resolved_domains.get(str(ioc_value).strip().lower())
+        if geo_ip and geo_ip in geo_by_ip:
+            g = geo_by_ip[geo_ip]
             lat = g.get("lat")
             lon = g.get("lon")
             country = g.get("country") or country
@@ -679,8 +712,9 @@ async def fetch_threatfox(client: httpx.AsyncClient) -> list[dict[str, Any]]:
             country = cc
             location_quality = "country-centroid (approximate)"
         else:
-            # Skip non-geolocatable IOCs; map should only show meaningful coordinates.
-            continue
+            # Keep valid indicators in the alert stream without inventing a map position.
+            lat = None
+            lon = None
 
         first_seen = ioc.get("first_seen") or ioc.get("ioc_first_seen") or ioc.get("date_added")
         out.append(
@@ -692,7 +726,7 @@ async def fetch_threatfox(client: httpx.AsyncClient) -> list[dict[str, Any]]:
                 "type": ioc.get("malware", "IOC"),
                 "attackKind": ioc.get("threat_type_desc") or ioc.get("threat_type") or "malicious IOC",
                 "source": "threatfox",
-                "ip": ioc_value if is_ipv4(ioc_value) else None,
+                "ip": geo_ip,
                 "firstSeen": first_seen,
                 "locationQuality": location_quality,
                 "confidence": normalize_score(float(ioc.get("confidence_level", 50)), 0, 100),
@@ -819,7 +853,7 @@ async def fetch_phishtank(client: httpx.AsyncClient) -> list[dict[str, Any]]:
 
 
 async def fetch_phishing_army(client: httpx.AsyncClient) -> list[dict[str, Any]]:
-    # Community phishing URL blocklist (free, no key).
+    # Community phishing domain blocklist (free, no key).
     endpoint_candidates = [
         "https://phishing.army/download/phishing_army_blocklist_extended.txt",
         "https://phishing.army/download/phishing_army_blocklist.txt",
@@ -831,19 +865,18 @@ async def fetch_phishing_army(client: httpx.AsyncClient) -> list[dict[str, Any]]
         except Exception:
             continue
         lines = [ln.strip() for ln in text.splitlines() if ln.strip() and not ln.strip().startswith("#")]
-        lines = [ln for ln in lines if ln.startswith("http://") or ln.startswith("https://")]
+        lines = [ln for ln in lines if "." in ln and " " not in ln]
         if lines:
             rows = lines[:MAX_PHISHING_ARMY_ROWS]
             break
     if not rows:
         return []
 
-    host_to_ip = await resolve_url_hosts_to_ipv4(rows)
+    host_to_ip = await resolve_hosts_to_ipv4(rows)
     geo = await geolocate_ips_ip_api(client, list(host_to_ip.values()))
     out: list[dict[str, Any]] = []
-    for i, u in enumerate(rows):
-        host = safe_url_host(u)
-        ip = host_to_ip.get(host) if host else None
+    for i, domain in enumerate(rows):
+        ip = host_to_ip.get(domain)
         g = geo.get(ip) if ip else None
         out.append(
             {
@@ -851,11 +884,11 @@ async def fetch_phishing_army(client: httpx.AsyncClient) -> list[dict[str, Any]]
                 "country": g.get("country", "GLOBAL") if g else "GLOBAL",
                 "lat": g.get("lat") if g else None,
                 "lon": g.get("lon") if g else None,
-                "type": "Phishing Army URL",
+                "type": "Phishing Army domain",
                 "attackKind": "phishing / social engineering",
                 "source": "phishing-army+dns+ip-api" if g else "phishing-army",
                 "ip": ip,
-                "ioc": u,
+                "ioc": domain,
                 "firstSeen": None,
                 "locationQuality": "ip-geolocated (approximate)" if g else "not-geolocated",
                 "confidence": 0.75,
@@ -1146,7 +1179,11 @@ async def fetch_depsdev_supply_chain(client: httpx.AsyncClient) -> list[dict[str
         if not version_rows:
             continue
         preferred = next((v for v in version_rows if v.get("isDefault")), None) or version_rows[-1]
-        version_key = str(preferred.get("versionKey") or preferred.get("version") or "")
+        raw_version_key = preferred.get("versionKey")
+        if isinstance(raw_version_key, dict):
+            version_key = str(raw_version_key.get("version") or "")
+        else:
+            version_key = str(raw_version_key or preferred.get("version") or "")
         if not version_key:
             continue
 
@@ -1506,80 +1543,80 @@ async def fetch_circl_recent(client: httpx.AsyncClient) -> list[dict[str, Any]]:
 
 
 async def fetch_cisa_alerts(client: httpx.AsyncClient) -> list[dict[str, Any]]:
-    # CISA advisories RSS/XML as live non-geolocated alert intelligence.
+    # CISA's website blocks automated XML requests. Its official CSAF GitHub
+    # repository provides the same class of advisories as machine-readable JSON.
     global CISA_COOLDOWN_UNTIL
     if time.time() < CISA_COOLDOWN_UNTIL:
         raise RuntimeError("cooldown")
-    endpoint_candidates = [
-        "https://www.cisa.gov/cybersecurity-advisories/all.xml",
-        "https://www.cisa.gov/news-events/cybersecurity-advisories.xml",
-        "https://www.cisa.gov/cybersecurity-advisories.xml",
-        "https://www.cisa.gov/sites/default/files/feeds/cybersecurity-advisories.xml",
-        "https://www.cisa.gov/uscert/ncas/alerts.xml",
-        "https://www.cisa.gov/uscert/ncas/current-activity.xml",
-        "https://www.cisa.gov/uscert/ncas/analysis-reports.xml",
-    ]
-    xml_text = None
-    saw_forbidden = False
-    for url in endpoint_candidates:
-        try:
-            resp = await client.get(url, timeout=25)
-            if resp.status_code == 403:
-                saw_forbidden = True
-                continue
-            xml_text = resp.text
-        except Exception:
-            continue
-        if xml_text and "<item" in xml_text:
-            break
-        if xml_text and "<entry" in xml_text:
-            break
-    if not xml_text:
-        if saw_forbidden:
-            CISA_COOLDOWN_UNTIL = time.time() + 1800
-            raise RuntimeError("forbidden")
-        return []
-
-    out: list[dict[str, Any]] = []
+    year = datetime.now(timezone.utc).year
+    listing_url = f"https://api.github.com/repos/cisagov/CSAF/contents/csaf_files/OT/white/{year}?ref=develop"
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "cyber-threat-dashboard/0.1",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
     try:
-        root = ET.fromstring(xml_text)
+        response = await client.get(listing_url, headers=headers, timeout=25)
+        if response.status_code in {403, 429}:
+            CISA_COOLDOWN_UNTIL = time.time() + 1800
+            raise RuntimeError("quota" if response.status_code == 429 else "forbidden")
+        response.raise_for_status()
+        listing = response.json()
+    except RuntimeError:
+        raise
     except Exception:
-        return []
-    items = root.findall(".//item") or root.findall(".//{*}item")
-    if not items:
-        # Atom fallback
-        items = root.findall(".//{http://www.w3.org/2005/Atom}entry") or root.findall(".//{*}entry")
-    for i, item in enumerate(items[:MAX_CISA_ALERT_ROWS]):
-        title = (
-            item.findtext("title")
-            or item.findtext("{*}title")
-            or item.findtext("{http://www.w3.org/2005/Atom}title")
-            or ""
-        ).strip()
-        desc = (
-            item.findtext("description")
-            or item.findtext("{*}description")
-            or item.findtext("summary")
-            or item.findtext("{*}summary")
-            or item.findtext("{http://www.w3.org/2005/Atom}summary")
-            or ""
-        ).strip()
-        pub = (
-            item.findtext("pubDate")
-            or item.findtext("{*}pubDate")
-            or item.findtext("published")
-            or item.findtext("{*}published")
-            or item.findtext("updated")
-            or item.findtext("{*}updated")
-            or item.findtext("{http://www.w3.org/2005/Atom}published")
-            or item.findtext("{http://www.w3.org/2005/Atom}updated")
-            or ""
-        ).strip()
-        link = (item.findtext("link") or item.findtext("{*}link") or "").strip()
-        if not link:
-            atom_link = item.find("{http://www.w3.org/2005/Atom}link") or item.find("{*}link")
-            if atom_link is not None:
-                link = str(atom_link.attrib.get("href") or "").strip()
+        raise RuntimeError("client_error")
+    if not isinstance(listing, list):
+        raise RuntimeError("client_error")
+
+    files = [
+        row for row in listing
+        if isinstance(row, dict)
+        and str(row.get("name") or "").endswith(".json")
+        and isinstance(row.get("download_url"), str)
+    ]
+    files.sort(key=lambda row: str(row.get("name") or ""), reverse=True)
+    files = files[: min(MAX_CISA_ALERT_ROWS, 16)]
+
+    semaphore = asyncio.Semaphore(4)
+
+    async def load_csaf(row: dict[str, Any]) -> dict[str, Any] | None:
+        try:
+            async with semaphore:
+                response = await client.get(str(row["download_url"]), headers=headers, timeout=25)
+            response.raise_for_status()
+            data = response.json()
+            return data if isinstance(data, dict) else None
+        except Exception:
+            return None
+
+    documents = await asyncio.gather(*(load_csaf(row) for row in files))
+    out: list[dict[str, Any]] = []
+    for i, data in enumerate(documents):
+        if not isinstance(data, dict):
+            continue
+        document = data.get("document") if isinstance(data.get("document"), dict) else {}
+        tracking = document.get("tracking") if isinstance(document.get("tracking"), dict) else {}
+        title = str(document.get("title") or tracking.get("id") or "CISA advisory").strip()
+        notes = document.get("notes") if isinstance(document.get("notes"), list) else []
+        summaries = [
+            str(note.get("text") or "")
+            for note in notes
+            if isinstance(note, dict) and str(note.get("category") or "") == "summary"
+        ]
+        vulnerabilities = data.get("vulnerabilities") if isinstance(data.get("vulnerabilities"), list) else []
+        cves = [str(v.get("cve")) for v in vulnerabilities if isinstance(v, dict) and v.get("cve")]
+        desc = " ".join(summaries + cves[:12])
+        pub = str(tracking.get("current_release_date") or tracking.get("initial_release_date") or "").strip()
+        references = document.get("references") if isinstance(document.get("references"), list) else []
+        link = next(
+            (
+                str(ref.get("url"))
+                for ref in references
+                if isinstance(ref, dict) and "cisa.gov" in str(ref.get("url") or "")
+            ),
+            str(files[i].get("html_url") or ""),
+        )
         text = f"{title} {desc}"
         attack_kind = infer_attack_kind(text)
         # Heuristic boosts for glossary coverage on advisory terms.
@@ -1601,7 +1638,7 @@ async def fetch_cisa_alerts(client: httpx.AsyncClient) -> list[dict[str, Any]]:
                 "country": "GLOBAL",
                 "lat": None,
                 "lon": None,
-                "type": f"CISA Advisory {title[:120]}",
+                "type": f"CISA CSAF Advisory {title[:120]}",
                 "attackKind": attack_kind,
                 "source": "cisa-advisories",
                 "ioc": link or title,
@@ -1621,11 +1658,19 @@ async def fetch_urlscan_recent(client: httpx.AsyncClient) -> list[dict[str, Any]
     # Free-tier friendly: small pull of recent suspicious/malicious scans.
     q = quote("(verdicts.overall.malicious:1 OR verdicts.urlscan.malicious:1) AND date:>now-3d")
     url = f"https://urlscan.io/api/v1/search/?q={q}&size={MAX_URLSCAN_ROWS}"
-    headers = {"API-Key": URLSCAN_API_KEY} if URLSCAN_API_KEY else {}
+    headers = {"api-key": URLSCAN_API_KEY} if URLSCAN_API_KEY else {}
     try:
-        data = (await client.get(url, headers=headers, timeout=25)).json()
+        response = await client.get(url, headers=headers, timeout=25)
+        if response.status_code in {401, 403}:
+            raise RuntimeError("forbidden")
+        if response.status_code == 429:
+            raise RuntimeError("quota")
+        response.raise_for_status()
+        data = response.json()
+    except RuntimeError:
+        raise
     except Exception:
-        return []
+        raise RuntimeError("client_error")
     rows = data.get("results") if isinstance(data, dict) else None
     if not isinstance(rows, list):
         return []
@@ -1721,7 +1766,9 @@ async def fetch_ransomware_live(client: httpx.AsyncClient) -> list[dict[str, Any
         if rows:
             break
     if not rows:
-        return []
+        # The provider currently advertises these v2 routes but returns 404 for
+        # all of them. Surface that as a feed error instead of a healthy empty.
+        raise RuntimeError("upstream_404")
 
     out: list[dict[str, Any]] = []
     for i, r in enumerate(rows[:MAX_RANSOMWARE_LIVE_ROWS]):
@@ -1997,31 +2044,33 @@ async def resolve_hosts_to_ipv4(hosts: list[str]) -> dict[str, str]:
 
 
 async def geolocate_ips_ip_api(client: httpx.AsyncClient, ips: list[str]) -> dict[str, dict[str, Any]]:
-    # ip-api free tier uses HTTP. Keep calls batched and small.
+    # Use HTTPS so queried indicators are never exposed in cleartext. The
+    # intentionally small cap keeps the prototype within development quotas.
     if not ips:
         return {}
     out: dict[str, dict[str, Any]] = {}
-    url = "http://ip-api.com/batch?fields=status,message,countryCode,lat,lon,query"
     uniq = sorted(set(ips))[:MAX_IP_GEO_INPUT]
-    for batch in chunks(uniq, 80):
-        payload = [{"query": ip} for ip in batch]
+    semaphore = asyncio.Semaphore(5)
+
+    async def locate(ip: str) -> None:
+        url = f"https://ipapi.co/{ip}/json/"
         try:
-            data = (await client.post(url, json=payload, timeout=20)).json()
+            async with semaphore:
+                response = await client.get(url, timeout=15)
+            if response.status_code != 200:
+                return
+            data = response.json()
         except Exception:
-            continue
-        if not isinstance(data, list):
-            continue
-        for r in data:
-            if not isinstance(r, dict):
-                continue
-            ip = r.get("query")
-            if not ip or r.get("status") != "success":
-                continue
-            lat = r.get("lat")
-            lon = r.get("lon")
-            cc = (r.get("countryCode") or "").upper()
-            if isinstance(lat, (int, float)) and isinstance(lon, (int, float)):
-                out[ip] = {"lat": lat, "lon": lon, "country": cc or "UNK"}
+            return
+        if not isinstance(data, dict) or data.get("error"):
+            return
+        lat = data.get("latitude")
+        lon = data.get("longitude")
+        cc = str(data.get("country_code") or "").upper()
+        if isinstance(lat, (int, float)) and isinstance(lon, (int, float)):
+            out[ip] = {"lat": lat, "lon": lon, "country": cc or "UNK"}
+
+    await asyncio.gather(*(locate(ip) for ip in uniq))
     return out
 
 
@@ -2058,24 +2107,24 @@ async def fetch_feodotracker(client: httpx.AsyncClient) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for row in sample:
         ip = row.get("ip_address") or row.get("dst_ip") or row.get("ioc")
-        if not (isinstance(ip, str) and ip in geo):
+        if not isinstance(ip, str):
             continue
-        g = geo[ip]
+        g = geo.get(ip)
         first_seen = row.get("first_seen_utc") or row.get("first_seen") or row.get("date_added")
         malware = row.get("malware") or row.get("malware_family") or "Feodo C2"
         port = row.get("dst_port") or row.get("port")
         out.append(
             {
                 "id": f"feodo-{ip}-{port or 'na'}",
-                "country": g.get("country", "UNK"),
-                "lat": g["lat"],
-                "lon": g["lon"],
+                "country": g.get("country", "UNK") if g else "UNK",
+                "lat": g.get("lat") if g else None,
+                "lon": g.get("lon") if g else None,
                 "type": str(malware),
                 "attackKind": "botnet-c2",
-                "source": "feodotracker+ip-api",
+                "source": "feodotracker",
                 "ip": ip,
                 "firstSeen": first_seen,
-                "locationQuality": "ip-geolocated (approximate)",
+                "locationQuality": "ip-geolocated (approximate)" if g else "not-geolocated",
                 "confidence": 0.82,
                 "assetCriticality": 3,
                 "hoursAgo": hours_since_iso8601(first_seen, fallback=12),
@@ -2117,21 +2166,19 @@ async def fetch_spamhaus_drop(client: httpx.AsyncClient) -> list[dict[str, Any]]
     for cidr in unique_cidrs:
         ip = cidr.split("/", 1)[0]
         g = geo.get(ip)
-        if not g:
-            continue
         out.append(
             {
                 "id": f"spamhaus-drop-{cidr}",
-                "country": g.get("country", "UNK"),
-                "lat": g.get("lat"),
-                "lon": g.get("lon"),
+                "country": g.get("country", "UNK") if g else "UNK",
+                "lat": g.get("lat") if g else None,
+                "lon": g.get("lon") if g else None,
                 "type": "Spamhaus DROP/EDROP",
                 "attackKind": "botnet-c2",
-                "source": "spamhaus-drop+ip-api",
+                "source": "spamhaus-drop",
                 "ip": ip,
                 "ioc": cidr,
                 "firstSeen": None,
-                "locationQuality": "ip-geolocated (approximate)",
+                "locationQuality": "ip-geolocated (approximate)" if g else "not-geolocated",
                 "confidence": 0.8,
                 "assetCriticality": 3,
                 "hoursAgo": 4,
@@ -2168,20 +2215,18 @@ async def fetch_firehol_level1(client: httpx.AsyncClient) -> list[dict[str, Any]
     out: list[dict[str, Any]] = []
     for ip in unique_ips:
         g = geo.get(ip)
-        if not g:
-            continue
         out.append(
             {
                 "id": f"firehol-l1-{ip}",
-                "country": g.get("country", "UNK"),
-                "lat": g.get("lat"),
-                "lon": g.get("lon"),
+                "country": g.get("country", "UNK") if g else "UNK",
+                "lat": g.get("lat") if g else None,
+                "lon": g.get("lon") if g else None,
                 "type": "FireHOL Level 1",
                 "attackKind": "botnet-c2",
-                "source": "firehol-level1+ip-api",
+                "source": "firehol-level1",
                 "ip": ip,
                 "firstSeen": None,
-                "locationQuality": "ip-geolocated (approximate)",
+                "locationQuality": "ip-geolocated (approximate)" if g else "not-geolocated",
                 "confidence": 0.74,
                 "assetCriticality": 3,
                 "hoursAgo": 5,
@@ -2218,21 +2263,19 @@ async def fetch_emergingthreats_compromised(client: httpx.AsyncClient) -> list[d
     out: list[dict[str, Any]] = []
     for ip in unique_ips:
         g = geo.get(ip)
-        if not g:
-            continue
         out.append(
             {
                 "id": f"emergingthreats-{ip}",
-                "country": g.get("country", "UNK"),
-                "lat": g.get("lat"),
-                "lon": g.get("lon"),
+                "country": g.get("country", "UNK") if g else "UNK",
+                "lat": g.get("lat") if g else None,
+                "lon": g.get("lon") if g else None,
                 "type": "Emerging Threats compromised IP",
                 "attackKind": "botnet-c2",
-                "source": "emergingthreats+ip-api",
+                "source": "emergingthreats",
                 "ip": ip,
                 "ioc": ip,
                 "firstSeen": None,
-                "locationQuality": "ip-geolocated (approximate)",
+                "locationQuality": "ip-geolocated (approximate)" if g else "not-geolocated",
                 "confidence": 0.77,
                 "assetCriticality": 3,
                 "hoursAgo": 4,
@@ -2272,21 +2315,19 @@ async def fetch_greensnow_blacklist(client: httpx.AsyncClient) -> list[dict[str,
     out: list[dict[str, Any]] = []
     for ip in unique_ips:
         g = geo.get(ip)
-        if not g:
-            continue
         out.append(
             {
                 "id": f"greensnow-{ip}",
-                "country": g.get("country", "UNK"),
-                "lat": g.get("lat"),
-                "lon": g.get("lon"),
+                "country": g.get("country", "UNK") if g else "UNK",
+                "lat": g.get("lat") if g else None,
+                "lon": g.get("lon") if g else None,
                 "type": "GreenSnow blacklist IP",
                 "attackKind": "botnet-c2",
-                "source": "greensnow+ip-api",
+                "source": "greensnow",
                 "ip": ip,
                 "ioc": ip,
                 "firstSeen": None,
-                "locationQuality": "ip-geolocated (approximate)",
+                "locationQuality": "ip-geolocated (approximate)" if g else "not-geolocated",
                 "confidence": 0.76,
                 "assetCriticality": 3,
                 "hoursAgo": 4,
@@ -2338,21 +2379,19 @@ async def fetch_bruteforceblocker(client: httpx.AsyncClient) -> list[dict[str, A
     out: list[dict[str, Any]] = []
     for ip in unique_ips:
         g = geo.get(ip)
-        if not g:
-            continue
         out.append(
             {
                 "id": f"bruteforceblocker-{ip}",
-                "country": g.get("country", "UNK"),
-                "lat": g.get("lat"),
-                "lon": g.get("lon"),
+                "country": g.get("country", "UNK") if g else "UNK",
+                "lat": g.get("lat") if g else None,
+                "lon": g.get("lon") if g else None,
                 "type": "BruteForceBlocker attacking IP",
                 "attackKind": "credential theft",
-                "source": "bruteforceblocker+ip-api",
+                "source": "bruteforceblocker",
                 "ip": ip,
                 "ioc": ip,
                 "firstSeen": None,
-                "locationQuality": "ip-geolocated (approximate)",
+                "locationQuality": "ip-geolocated (approximate)" if g else "not-geolocated",
                 "confidence": 0.78,
                 "assetCriticality": 3,
                 "hoursAgo": 4,
@@ -2468,8 +2507,13 @@ def event_priority_score(e: dict[str, Any]) -> float:
     epss_part = float(e.get("epss", 0.0)) * 100.0
     conf_part = float(e.get("confidence", 0.0)) * 100.0
     crit_part = (float(e.get("assetCriticality", 3)) / 5.0) * 100.0
-    hours = float(e.get("hoursAgo", 24))
-    recency_part = max(0.0, 100.0 - hours * 10.0)
+    # Never manufacture recency for records with no source timestamp.
+    raw_hours = e.get("hoursAgo") if e.get("firstSeen") else None
+    try:
+        hours = float(raw_hours) if raw_hours is not None else None
+    except (TypeError, ValueError):
+        hours = None
+    recency_part = max(0.0, 100.0 - hours * 10.0) if hours is not None else 0.0
     return 0.35 * kev_part + 0.25 * epss_part + 0.15 * conf_part + 0.15 * crit_part + 0.10 * recency_part
 
 
@@ -2628,6 +2672,8 @@ async def build_live_events(
                     sources[name] = "error:client_error"
                 elif "forbidden" in msg or "403" in msg:
                     sources[name] = "skipped:forbidden"
+                elif "upstream_404" in msg:
+                    sources[name] = "error:upstream_404"
                 else:
                     sources[name] = f"error:{type(exc).__name__}"
                 return []
@@ -2648,7 +2694,12 @@ async def build_live_events(
             run_feed("malwarebazaar", fetch_malwarebazaar),
             run_feed("depsdev", fetch_depsdev_supply_chain, cadence_every=DEPSDEV_REFRESH_EVERY),
             run_feed("osv", fetch_osv_supply_chain, cadence_every=OSV_REFRESH_EVERY),
-            run_feed("pulsedive", fetch_pulsedive, cadence_every=PULSEDIVE_REFRESH_EVERY),
+            run_feed(
+                "pulsedive",
+                fetch_pulsedive,
+                no_key=not bool(PULSEDIVE_API_KEY),
+                cadence_every=PULSEDIVE_REFRESH_EVERY,
+            ),
             run_feed("otx", fetch_otx, no_key=not bool(OTX_API_KEY)),
             run_feed("circl", fetch_circl_recent),
             run_feed("ransomware_live", fetch_ransomware_live),
@@ -2730,13 +2781,64 @@ async def build_live_events(
     alert_quota = max(120, min(220, MAX_TOTAL_EVENTS // 3))
     geo_quota = max(120, MAX_TOTAL_EVENTS - kev_quota - alert_quota)
 
-    geo_ranked = sorted(live_geo, key=event_priority_score, reverse=True)
-    geo_selected = capped_by_source(geo_ranked, per_source_cap=max(35, geo_quota // 4), total_cap=geo_quota)
+    mapped_geo_ranked = sorted(
+        [e for e in live_geo if isinstance(e.get("lat"), (int, float)) and isinstance(e.get("lon"), (int, float))],
+        key=event_priority_score,
+        reverse=True,
+    )
+    unmapped_geo_ranked = sorted(
+        [e for e in live_geo if not (isinstance(e.get("lat"), (int, float)) and isinstance(e.get("lon"), (int, float)))],
+        key=event_priority_score,
+        reverse=True,
+    )
+    mapped_selected = capped_by_source(
+        mapped_geo_ranked,
+        per_source_cap=max(35, geo_quota // 4),
+        total_cap=min(100, geo_quota),
+    )
+    unmapped_selected = capped_by_source(
+        unmapped_geo_ranked,
+        per_source_cap=max(35, geo_quota // 4),
+        total_cap=max(0, geo_quota - len(mapped_selected)),
+    )
+    geo_selected = mapped_selected + unmapped_selected
     alert_ranked = sorted(live_alert_only, key=event_priority_score, reverse=True)
     alert_selected = capped_by_source(alert_ranked, per_source_cap=max(25, alert_quota // 5), total_cap=alert_quota)
     kev_selected = kev_events[:kev_quota]
     events = (geo_selected + alert_selected + kev_selected)[:MAX_TOTAL_EVENTS]
     events = apply_attack_taxonomy(events)
+    for event in events:
+        source = str(event.get("source", "")).lower()
+        attack_kind = str(event.get("attackKind", "")).lower()
+        location_quality = str(event.get("locationQuality", "not-geolocated")).lower()
+        if source in {"kev+epss", "circl", "osv", "cisa-advisories", "depsdev"} or any(
+            token in attack_kind for token in ("vulnerability", "cve", "supply-chain")
+        ):
+            signal_type = "vulnerability-advisory"
+        elif source.startswith("cloudflare-radar") or source == "ddos-telemetry" or "telemetry" in attack_kind:
+            signal_type = "aggregate-telemetry"
+        elif "ransomware" in source or "ransomware" in attack_kind:
+            signal_type = "ransomware-disclosure"
+        elif any(token in source for token in ("phish", "urlhaus", "urlscan")):
+            signal_type = "malicious-url-or-domain"
+        else:
+            signal_type = "malicious-infrastructure-indicator"
+
+        if not isinstance(event.get("lat"), (int, float)) or not isinstance(event.get("lon"), (int, float)):
+            location_class = "not-mapped"
+        elif "centroid" in location_quality:
+            location_class = "country-centroid"
+        elif "ip-geolocated" in location_quality:
+            location_class = "ip-geolocated"
+        else:
+            location_class = "source-derived"
+
+        event["signalType"] = signal_type
+        event["locationClass"] = location_class
+        event["recencyKnown"] = bool(event.get("firstSeen"))
+        if not event["recencyKnown"]:
+            event["hoursAgo"] = None
+        event["confidenceBasis"] = "source-and-parser heuristic; not a calibrated probability"
     return events, sources
 
 
@@ -2802,7 +2904,7 @@ def compute_source_health(sources: dict[str, Any]) -> dict[str, dict[str, Any]]:
         elif status.startswith("skipped:daily-limit"):
             reason = "throttled"
         elif status.startswith("skipped:forbidden"):
-            reason = "upstream_empty"
+            reason = "forbidden"
         elif status.startswith("skipped:degraded"):
             reason = "upstream_empty"
         elif "forbidden" in status.lower() or "403" in status.lower():
@@ -3047,25 +3149,14 @@ async def live_threats(force_refresh: bool = False) -> dict[str, Any]:
     map_events_all_geo = [e for e in events if isinstance(e.get("lat"), (int, float)) and isinstance(e.get("lon"), (int, float))]
     live_only_map_events = [e for e in map_events_all_geo if e.get("source") != "historical-context"]
     context_map_events = [e for e in map_events_all_geo if e.get("source") == "historical-context"]
-    # Prefer live-only map; blend historical context only when live geolocated coverage is sparse.
-    map_events, include_context_on_map = build_balanced_live_map_events(
-        live_events=live_only_map_events,
-        context_events=context_map_events,
-        max_events=MAX_TOTAL_EVENTS,
-    )
-    # Add projected live alerts when non-botnet categories are underrepresented.
-    map_unique_kinds = {infer_attack_kind(str(e.get("attackKind") or e.get("type"))) for e in map_events}
-    map_non_botnet_count = sum(1 for e in map_events if infer_attack_kind(str(e.get("attackKind") or e.get("type"))) != "botnet c2")
-    needs_projection = (len(map_unique_kinds) < 9) or (map_non_botnet_count < 40)
+    # Preserve every selected real coordinate. Visual balancing must not delete
+    # observed or transparently approximate telemetry records.
+    map_events = live_only_map_events[:MAX_TOTAL_EVENTS]
+    include_context_on_map = False
+    # Default map contains only records with source-derived or geolocated
+    # coordinates. Non-geolocated alerts remain in the alert stream and are
+    # never placed at synthetic regional hubs.
     projected_added = 0
-    if needs_projection:
-        projected = build_projected_alert_map_events(events=events, existing_map_events=map_events, max_add=90)
-        if projected:
-            room = max(0, MAX_TOTAL_EVENTS - len(map_events))
-            to_add = projected[:room]
-            map_events = map_events + to_add
-            projected_added = len(to_add)
-    map_events = rebalance_map_kind_share(map_events, max_botnet_ratio=0.25)
     alert_events = events
     return {
         "generated_at": int(time.time()),
@@ -3080,10 +3171,10 @@ async def live_threats(force_refresh: bool = False) -> dict[str, Any]:
         "events": alert_events,
         "map_events": map_events,
         "map_semantics": {
-            "what_hotspot_means": "A geolocated malicious IOC/telemetry point from live feeds (ThreatFox, Feodo, Spamhaus DROP/EDROP, FireHOL Level 1, URLhaus, OTX, Pulsedive, ransomware.live, Cloudflare Radar).",
+            "what_hotspot_means": "A source-derived or approximately geolocated threat signal; not proof of an attack at an exact address.",
             "location_note": "Coordinates are approximate: country-centroid or IP-geolocation.",
-            "not_shown_on_map": "KEV/CVE records are excluded. Historical-context is blended only when live geolocated categories are too narrow.",
-            "projected_alerts_note": "Some non-geolocated live alerts may be projected to regional hubs to improve category visibility; these are not exact incident locations."
+            "not_shown_on_map": "Records without source-derived or approximate coordinates, including KEV/CVE advisories, remain in the alert stream.",
+            "projected_alerts_note": "Synthetic regional projections are disabled. Non-geolocated alerts appear only in the alert stream."
         },
     }
 
@@ -3103,6 +3194,7 @@ async def source_health(force_refresh: bool = False) -> dict[str, Any]:
             "no_key": "API key missing in backend environment.",
             "throttled": "Source intentionally paced/skipped to preserve daily budget.",
             "quota": "Source likely hit rate/quota limit.",
+            "forbidden": "Source requires authorization or denied this request.",
             "error": "Source request failed or parse failed.",
             "fallback_on": "Local context fallback enabled to maintain map utility.",
             "fallback_off": "Local context fallback not active."
