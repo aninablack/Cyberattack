@@ -32,7 +32,6 @@ jobs:
           ABUSECH_API_KEY: ${{ secrets.ABUSECH_API_KEY }}
           OTX_API_KEY: ${{ secrets.OTX_API_KEY }}
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-          URLSCAN_API_KEY: ${{ secrets.URLSCAN_API_KEY }}
           MAX_TOTAL_EVENTS: "500"
           MAX_URLHAUS_ROWS: "180"
           MAX_OPENPHISH_ROWS: "120"
