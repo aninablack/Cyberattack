@@ -26,6 +26,7 @@ function updateTopBadges() {
 updateTopBadges();
 
 const SNAPSHOT_ENDPOINTS = (() => {
+  const githubSnapshot = "https://raw.githubusercontent.com/aninablack/Cyberattack/main/data/live-threats.json";
   const fromWindow = (typeof window !== "undefined" && typeof window.CYBER_SNAPSHOT_URL === "string")
     ? window.CYBER_SNAPSHOT_URL.trim()
     : "";
@@ -34,7 +35,7 @@ const SNAPSHOT_ENDPOINTS = (() => {
     const el = document.querySelector('meta[name="cyber-snapshot-url"]');
     return el?.content?.trim() || "";
   })();
-  return uniqueStrings([fromWindow, fromMeta, "./data/live-threats.json"]);
+  return uniqueStrings([fromWindow, fromMeta, githubSnapshot, "./data/live-threats.json"]);
 })();
 
 const sourceCatalog = [
