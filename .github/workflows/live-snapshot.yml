@@ -3,7 +3,8 @@ name: Refresh Live Snapshot
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/30 * * * *"
+    # Offset from :00/:30, when GitHub Actions schedules are most congested.
+    - cron: "7,37 * * * *"
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 permissions:
