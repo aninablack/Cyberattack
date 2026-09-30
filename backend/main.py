@@ -2670,9 +2670,19 @@ async def build_live_events(
                 return True
             return ((refresh_seq - 1) % every) == 0
 
-        async def run_feed(name: str, fn: Any, *, no_key: bool = False, cadence_every: int = 1) -> list[dict[str, Any]]:
+        async def run_feed(
+            name: str,
+            fn: Any,
+            *,
+            no_key: bool = False,
+            cadence_every: int = 1,
+            optional: bool = False,
+        ) -> list[dict[str, Any]]:
             if no_key:
-                sources[name] = "skipped:no-key"
+                if optional:
+                    sources.pop(name, None)
+                else:
+                    sources[name] = "skipped:no-key"
                 return []
             if not cadence_allows(cadence_every):
                 # Planned skip to preserve daily quota/limits.
@@ -2696,7 +2706,10 @@ async def build_live_events(
                 elif "client_error" in msg:
                     sources[name] = "error:client_error"
                 elif "forbidden" in msg or "403" in msg:
-                    sources[name] = "skipped:forbidden"
+                    if optional:
+                        sources.pop(name, None)
+                    else:
+                        sources[name] = "skipped:forbidden"
                 elif "upstream_404" in msg:
                     sources[name] = "error:upstream_404"
                 else:
@@ -2724,13 +2737,20 @@ async def build_live_events(
                 fetch_pulsedive,
                 no_key=not bool(PULSEDIVE_API_KEY),
                 cadence_every=PULSEDIVE_REFRESH_EVERY,
+                optional=True,
             ),
             run_feed("otx", fetch_otx, no_key=not bool(OTX_API_KEY)),
             run_feed("circl", fetch_circl_recent),
             run_feed("ransomware_live", fetch_ransomware_live),
             run_feed("ddos_telemetry", fetch_ddos_country_telemetry),
             run_feed("cisa_alerts", fetch_cisa_alerts, cadence_every=CISA_REFRESH_EVERY),
-            run_feed("urlscan", fetch_urlscan_recent, cadence_every=URLSCAN_REFRESH_EVERY),
+            run_feed(
+                "urlscan",
+                fetch_urlscan_recent,
+                no_key=not bool(URLSCAN_API_KEY),
+                cadence_every=URLSCAN_REFRESH_EVERY,
+                optional=True,
+            ),
         )
         (
             tf,
