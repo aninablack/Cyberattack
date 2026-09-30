@@ -1776,7 +1776,8 @@ async function init() {
   let seenLive = false;
   const FAILURE_GRACE = 3;
   const REFRESH_MS = 600000;
-  const INITIAL_SLA_MS = 3000;
+  const STALE_RETRY_MS = 60000;
+  const INITIAL_SLA_MS = 8000;
   const MAX_LIVE_AGE_MS = 45 * 60 * 1000;
   const snapshotEndpoints = uniqueStrings(SNAPSHOT_ENDPOINTS);
 
@@ -1944,9 +1945,14 @@ async function init() {
       syncThreatLogToggle();
     });
   }
-  window.setInterval(() => {
-    refreshLiveData(false);
-  }, REFRESH_MS);
+  const scheduleSnapshotRefresh = () => {
+    const delay = lastGood?.mode === "live" ? REFRESH_MS : STALE_RETRY_MS;
+    window.setTimeout(async () => {
+      await refreshLiveData(false);
+      scheduleSnapshotRefresh();
+    }, delay);
+  };
+  scheduleSnapshotRefresh();
 }
 
 threatLog = safeLoadThreatLog();
