@@ -3,9 +3,9 @@ name: Refresh Live Snapshot
 on:
   workflow_dispatch:
   schedule:
-    # Off-peak minutes reduce the chance that GitHub drops a queued schedule.
-    # Changing the cron also re-registers the scheduled workflow actor.
-    - cron: "17,47 * * * *"
+    # Six refreshes per day keep the public-feed requests within quota.
+    # Minute 17 avoids GitHub Actions' busiest start-of-hour window.
+    - cron: "17 */4 * * *"
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 permissions:

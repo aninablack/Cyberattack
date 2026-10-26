@@ -1778,7 +1778,9 @@ async function init() {
   const REFRESH_MS = 600000;
   const STALE_RETRY_MS = 60000;
   const INITIAL_SLA_MS = 8000;
-  const MAX_LIVE_AGE_MS = 45 * 60 * 1000;
+  // Snapshots are intentionally generated every four hours to protect feed quotas.
+  // Allow one hour for GitHub's best-effort scheduler before marking data stale.
+  const MAX_LIVE_AGE_MS = 5 * 60 * 60 * 1000;
   const snapshotEndpoints = uniqueStrings(SNAPSHOT_ENDPOINTS);
 
   const snapshotGeneratedAt = (snapshot) => {

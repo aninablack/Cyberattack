@@ -1750,15 +1750,17 @@ def country_code_from_value(value: str | None) -> str | None:
 async def fetch_ransomware_live(client: httpx.AsyncClient) -> list[dict[str, Any]]:
     # Victim-post telemetry by country, mapped to country centroid.
     endpoint_candidates = [
+        "https://api.ransomware.live/v2/recentvictims",
         "https://api.ransomware.live/v2/recentposts",
         "https://api.ransomware.live/v2/posts",
-        "https://api.ransomware.live/v2/recentvictims",
         "https://api.ransomware.live/v2/victims",
     ]
     rows: list[dict[str, Any]] = []
     for url in endpoint_candidates:
         try:
-            data = (await client.get(url, timeout=25)).json()
+            response = await client.get(url, headers={"Accept": "application/json"}, timeout=25)
+            response.raise_for_status()
+            data = response.json()
         except Exception:
             continue
         if isinstance(data, list):
@@ -1768,8 +1770,7 @@ async def fetch_ransomware_live(client: httpx.AsyncClient) -> list[dict[str, Any
         if rows:
             break
     if not rows:
-        # The provider currently advertises these v2 routes but returns 404 for
-        # all of them. Surface that as a feed error instead of a healthy empty.
+        # Surface an unavailable upstream as an error instead of a healthy empty.
         raise RuntimeError("upstream_404")
 
     out: list[dict[str, Any]] = []
